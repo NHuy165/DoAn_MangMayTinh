@@ -1,0 +1,16 @@
+.vs/
+*.slnx.sqlite
+*.vsidx
+*.user
+*.suo
+
+Target_Server_CSharp/TargetServer/bin/
+Target_Server_CSharp/TargetServer/obj/
+Target_Server_CSharp/obj/
+
+Web_Controller_Python/.venv/
+Web_Controller_Python/__pycache__/
+*.pyc
+
+# Folder tree file
+structure.txt
