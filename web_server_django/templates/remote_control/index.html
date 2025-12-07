@@ -1,0 +1,390 @@
+{% extends "layouts/base.html" %}
+{% load static %}
+
+{% block title %} Remote Control Dashboard {% endblock %}
+
+{% block content %}
+
+<div class="container mx-auto px-4 py-6">
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-4xl font-bold text-gray-800 dark:text-white mb-2">
+            🎛️ Remote Control Panel
+        </h1>
+        <p class="text-gray-600 dark:text-gray-400">
+            Điều khiển máy tính từ xa - Quản lý Process, Application, Keylogger & More
+        </p>
+    </div>
+
+    <!-- Start Application Section -->
+    <div class="mb-6">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border-l-4 border-blue-500">
+            <h2 class="text-2xl font-semibold text-gray-800 dark:text-white mb-4">
+                🚀 Start Application / Process
+            </h2>
+            <div class="flex gap-2">
+                <input 
+                    type="text" 
+                    id="startProcInput" 
+                    class="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white" 
+                    placeholder="Enter name (e.g., edge, chrome, calc) or path...">
+                <button 
+                    onclick="startProcess()" 
+                    class="px-6 py-2 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-lg transition duration-200">
+                    Start
+                </button>
+            </div>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                Shortcuts: edge, chrome, word, excel, notepad, calc, paint, cmd...
+            </p>
+        </div>
+    </div>
+
+    <!-- Process & Application Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        
+        <!-- Running Processes -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+            <h2 class="text-2xl font-semibold text-gray-800 dark:text-white mb-4">
+                🖥️ Running Processes
+            </h2>
+            
+            <div class="flex gap-2 mb-4">
+                <button 
+                    onclick="getProcesses()" 
+                    class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold rounded-lg transition duration-200">
+                    Refresh
+                </button>
+                <input 
+                    type="text" 
+                    id="pidInput" 
+                    class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white" 
+                    placeholder="Enter PID">
+                <button 
+                    onclick="killProcess()" 
+                    class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold rounded-lg transition duration-200">
+                    Kill PID
+                </button>
+            </div>
+            
+            <div class="overflow-auto" style="max-height: 400px;">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-100 dark:bg-gray-700 sticky top-0">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-gray-700 dark:text-gray-300">Name</th>
+                            <th class="px-4 py-2 text-left text-gray-700 dark:text-gray-300">PID</th>
+                            <th class="px-4 py-2 text-left text-gray-700 dark:text-gray-300">Threads</th>
+                        </tr>
+                    </thead>
+                    <tbody id="processTable" class="divide-y divide-gray-200 dark:divide-gray-700">
+                        <!-- Data will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Running Applications -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+            <h2 class="text-2xl font-semibold text-gray-800 dark:text-white mb-4">
+                📱 Running Applications
+            </h2>
+            
+            <div class="flex gap-2 mb-4">
+                <button 
+                    onclick="getApps()" 
+                    class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold rounded-lg transition duration-200">
+                    Refresh
+                </button>
+                <input 
+                    type="text" 
+                    id="appIdInput" 
+                    class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white" 
+                    placeholder="Enter App ID">
+                <button 
+                    onclick="killApp()" 
+                    class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold rounded-lg transition duration-200">
+                    Kill App
+                </button>
+            </div>
+            
+            <div id="appList" class="overflow-auto space-y-2" style="max-height: 400px;">
+                <!-- Data will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Keylogger & Screenshot Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        
+        <!-- Keylogger -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-2xl font-semibold text-gray-800 dark:text-white">
+                    ⌨️ Keylogger
+                </h2>
+                <span id="keylogStatus" class="px-3 py-1 text-xs font-semibold rounded-full bg-gray-400 text-white">
+                    Unknown
+                </span>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-2 mb-4">
+                <button 
+                    onclick="keylogAction('HOOK')" 
+                    class="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-semibold rounded-lg transition duration-200">
+                    Hook (On)
+                </button>
+                <button 
+                    onclick="keylogAction('UNHOOK')" 
+                    class="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white text-sm font-semibold rounded-lg transition duration-200">
+                    Unhook (Off)
+                </button>
+                <button 
+                    onclick="clearKeylog()" 
+                    class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold rounded-lg transition duration-200">
+                    Clear Log
+                </button>
+                <button 
+                    onclick="getKeylogData()" 
+                    class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold rounded-lg transition duration-200">
+                    Fetch Data
+                </button>
+            </div>
+            
+            <div class="flex items-center mb-3">
+                <input 
+                    type="checkbox" 
+                    id="autoKeylogCheck" 
+                    onchange="toggleAutoKeylog()" 
+                    class="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500">
+                <label for="autoKeylogCheck" class="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                    Auto Update (3s)
+                </label>
+            </div>
+            
+            <textarea 
+                id="keylogArea" 
+                class="w-full h-64 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg font-mono text-sm bg-gray-50 dark:bg-gray-900 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                readonly 
+                placeholder="Keystrokes will appear here..."></textarea>
+        </div>
+
+        <!-- Screenshot -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+            <h2 class="text-2xl font-semibold text-gray-800 dark:text-white mb-4">
+                📸 Screenshot
+            </h2>
+            
+            <button 
+                onclick="takeScreenshot()" 
+                class="w-full px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg transition duration-200 mb-4">
+                Take Screenshot
+            </button>
+            
+            <div id="screenshotContainer" class="hidden">
+                <img 
+                    id="screenshot-img" 
+                    src="" 
+                    alt="Screenshot" 
+                    class="w-full rounded-lg border-2 border-gray-300 dark:border-gray-600">
+            </div>
+        </div>
+    </div>
+
+    <!-- Power Control Section -->
+    <div class="mb-6">
+        <div class="bg-gradient-to-r from-red-500 to-red-600 rounded-lg shadow-lg p-6">
+            <h2 class="text-2xl font-semibold text-white mb-4">
+                ⚠️ Power Control
+            </h2>
+            <div class="flex gap-4">
+                <button 
+                    onclick="powerAction('SHUTDOWN')" 
+                    class="flex-1 px-6 py-3 bg-white hover:bg-gray-100 text-red-600 font-semibold rounded-lg transition duration-200">
+                    Shutdown Server
+                </button>
+                <button 
+                    onclick="powerAction('RESTART')" 
+                    class="flex-1 px-6 py-3 bg-yellow-400 hover:bg-yellow-500 text-gray-800 font-semibold rounded-lg transition duration-200">
+                    Restart Server
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Hàm gọi API chung để tái sử dụng code
+    async function apiCall(url, method='GET', body=null) {
+        const options = { 
+            method: method, 
+            headers: {'Content-Type': 'application/json'} 
+        };
+        if (body) options.body = JSON.stringify(body);
+        
+        try {
+            const res = await fetch(url, options);
+            return await res.json();
+        } catch (err) {
+            console.error(err);
+            return { status: 'error', message: 'Connection Error' };
+        }
+    }
+
+    // --- Start Process Logic ---
+    async function startProcess() {
+        const name = document.getElementById('startProcInput').value;
+        if(!name) return alert("Please enter a name!");
+        
+        const res = await apiCall('/remote/api/process/start/', 'POST', {name: name});
+        alert(res.message || 'Command sent');
+        if(res.status === 'success') {
+            document.getElementById('startProcInput').value = '';
+        }
+    }
+
+    // --- Process List Logic ---
+    async function getProcesses() {
+        const data = await apiCall('/remote/api/process/list/');
+        const tbody = document.getElementById('processTable');
+        tbody.innerHTML = '';
+        
+        if (data.status === 'success' && data.data) {
+            data.data.forEach(p => {
+                tbody.innerHTML += `
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <td class="px-4 py-2 text-gray-800 dark:text-gray-300">${p.name}</td>
+                        <td class="px-4 py-2 text-gray-800 dark:text-gray-300">${p.id}</td>
+                        <td class="px-4 py-2 text-gray-800 dark:text-gray-300">${p.threads}</td>
+                    </tr>`;
+            });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="3" class="px-4 py-2 text-center text-gray-500">No data or error</td></tr>';
+        }
+    }
+
+    async function killProcess() {
+        const pid = document.getElementById('pidInput').value;
+        if(!pid) return alert("Please enter PID!");
+        
+        const res = await apiCall('/remote/api/process/kill/', 'POST', {id: pid});
+        alert(res.message || 'Command sent');
+        getProcesses();
+    }
+
+    // --- App List Logic ---
+    async function getApps() {
+        const data = await apiCall('/remote/api/app/list/');
+        const list = document.getElementById('appList');
+        list.innerHTML = '';
+        
+        if (data.status === 'success' && data.data) {
+            data.data.forEach(p => {
+                list.innerHTML += `
+                    <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <span class="text-gray-800 dark:text-gray-300">${p.name}</span>
+                        <span class="px-2 py-1 bg-blue-500 text-white text-xs rounded-full">${p.id}</span>
+                    </div>`;
+            });
+        } else {
+            list.innerHTML = '<div class="text-center text-gray-500 py-4">No data or error</div>';
+        }
+    }
+
+    async function killApp() {
+        const id = document.getElementById('appIdInput').value;
+        if(!id) return alert("Please enter App ID!");
+        
+        const res = await apiCall('/remote/api/app/kill/', 'POST', {id: id});
+        alert(res.message || 'Command sent');
+        getApps();
+    }
+
+    // --- Screenshot Logic ---
+    async function takeScreenshot() {
+        const res = await apiCall('/remote/api/screenshot/');
+        
+        if (res.status === 'success' && res.data) {
+            const img = document.getElementById('screenshot-img');
+            const container = document.getElementById('screenshotContainer');
+            img.src = "data:image/png;base64," + res.data;
+            container.classList.remove('hidden');
+        } else {
+            alert("Screenshot failed: " + (res.message || 'Unknown error'));
+        }
+    }
+
+    // --- Keylogger Logic ---
+    async function keylogAction(action) {
+        await apiCall('/remote/api/keylog/hook/', 'POST', {action: action});
+        setTimeout(updateKeylogStatus, 500);
+    }
+
+    async function clearKeylog() {
+        if(confirm("Delete logs?")) {
+            await apiCall('/remote/api/keylog/clear/', 'POST');
+            document.getElementById('keylogArea').value = "";
+        }
+    }
+    
+    async function getKeylogData() {
+        const res = await apiCall('/remote/api/keylog/get/');
+        
+        if (res.status === 'success') {
+            const area = document.getElementById('keylogArea');
+            if (area.value !== res.data) {
+                area.value = res.data || '';
+                area.scrollTop = area.scrollHeight;
+            }
+        }
+    }
+
+    async function updateKeylogStatus() {
+        const badge = document.getElementById('keylogStatus');
+        const res = await apiCall('/remote/api/keylog/status/');
+        
+        if (res.status === 'success') {
+            if (res.data === 'RUNNING') {
+                badge.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-green-500 text-white';
+                badge.innerText = 'HOOKED (ON)';
+            } else {
+                badge.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-gray-500 text-white';
+                badge.innerText = 'UNHOOKED (OFF)';
+            }
+        } else {
+            badge.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-red-500 text-white';
+            badge.innerText = 'ERROR';
+        }
+    }
+
+    // Logic cho checkbox Auto Update
+    let keylogInterval = null;
+    function toggleAutoKeylog() {
+        const isChecked = document.getElementById('autoKeylogCheck').checked;
+        
+        if (isChecked) {
+            getKeylogData();
+            updateKeylogStatus();
+            keylogInterval = setInterval(() => {
+                getKeylogData();
+                updateKeylogStatus(); 
+            }, 3000);
+        } else {
+            if (keylogInterval) clearInterval(keylogInterval);
+        }
+    }
+
+    // Khởi chạy khi load trang
+    document.addEventListener('DOMContentLoaded', () => {
+        updateKeylogStatus();
+    });
+
+    // --- Power Control Logic ---
+    async function powerAction(action) {
+        if(confirm("Are you sure you want to " + action + " the remote server?")) {
+            await apiCall('/remote/api/power/', 'POST', {action: action});
+            alert("Sent command: " + action);
+        }
+    }
+</script>
+
+{% endblock %}

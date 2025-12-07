@@ -31,6 +31,11 @@ Hệ thống bao gồm 2 thành phần chính:
 ```text
 DoAn_MangMayTinh/
 ├── Target_Server_CSharp/     # Source code phần điều khiển máy tính (viết bằng C#)
-├── Web_Controller_Python/    # Source code phần giao diện Web (viết bằng Python)
+├── Web_Controller_Python/    # [DEPRECATED] Source code Web cũ (Flask)
+├── rocket-django-main/       # 🆕 Source code Web mới (Django) ⭐
 ├── AI_Chatlog/               # Nhật ký phát triển và trao đổi với AI
+├── QUICK_START.md            # 🚀 Hướng dẫn chạy nhanh (3 bước)
+├── MIGRATION_GUIDE.md        # 📚 Chi tiết migration Flask → Django
+├── TESTING_CHECKLIST.md      # ✅ Checklist test đầy đủ
+├── PROJECT_SUMMARY.md        # 📊 Tóm tắt dự án
 └── README.md
