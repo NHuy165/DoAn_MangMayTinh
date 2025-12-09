@@ -25,6 +25,13 @@ urlpatterns = [
     path('power/', views.power_page, name='power'),
     
     # ==================== API ENDPOINTS ====================
+    # API Endpoints - UDP Discovery (NEW!)
+    path('api/discover-servers/', views.discover_servers, name='api_discover_servers'),
+    
+    # API Endpoints - Connection Management
+    path('api/connect-server/', views.connect_server, name='api_connect_server'),
+    path('api/disconnect-server/', views.disconnect_server, name='api_disconnect_server'),
+    
     # API Endpoints - Keylogger
     path('api/keylog/status/', views.get_keylog_status, name='api_keylog_status'),
     path('api/keylog/get/', views.get_keylog, name='api_keylog_get'),

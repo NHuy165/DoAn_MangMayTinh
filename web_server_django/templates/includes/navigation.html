@@ -25,7 +25,7 @@
             <span
               class="self-center text-xl font-semibold sm:text-2xl whitespace-nowrap dark:text-white">Remote Administration Tool</span>
           </a>
-          <form action="#" method="GET" class="hidden lg:block lg:pl-3.5">
+          <!-- <form action="#" method="GET" class="hidden lg:block lg:pl-3.5">
             <label for="topbar-search" class="sr-only">Search</label>
             <div class="relative mt-1 lg:w-96">
               <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -40,7 +40,29 @@
                 class="bg-gray-50 border border-gray-300 text-gray-900 sm:text-sm rounded-lg focus:ring-primary-500 focus:border-primary-500 block w-full pl-10 p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-primary-500 dark:focus:border-primary-500"
                 placeholder="Search">
             </div>
-          </form>
+          </form> -->
+          
+          <!-- Server Selection -->
+          <div class="hidden lg:flex lg:items-center lg:ml-4 lg:space-x-2">
+            <div class="relative">
+              <select id="server-select"
+                class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary-500 focus:border-primary-500 block w-64 p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-primary-500 dark:focus:border-primary-500">
+                <option value="" disabled selected>Select Server</option>
+              </select>
+            </div>
+            <button type="button" id="connect-server-btn"
+              class="text-white bg-primary-700 hover:bg-primary-800 focus:ring-4 focus:ring-primary-300 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-primary-600 dark:hover:bg-primary-700 focus:outline-none dark:focus:ring-primary-800">
+              Connect
+            </button>
+            <button type="button" id="disconnect-server-btn"
+              class="hidden text-white bg-red-600 hover:bg-red-700 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-red-500 dark:hover:bg-red-600 focus:outline-none dark:focus:ring-red-800">
+              Disconnect
+            </button>
+            <button type="button" id="discover-servers-btn"
+              class="text-gray-900 bg-white border border-gray-300 hover:bg-gray-100 focus:ring-4 focus:ring-gray-200 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:bg-gray-700 dark:hover:border-gray-600 dark:focus:ring-gray-700">
+              Discover
+            </button>
+          </div>
         </div>
         <div class="flex items-center">
           <!-- <div class="hidden mr-3 -mb-1 sm:block">
@@ -384,3 +406,201 @@
       </div>
     </div>
 </nav>
+
+<script>
+  // Server discovery and connection functionality
+  document.addEventListener('DOMContentLoaded', function() {
+    const serverSelect = document.getElementById('server-select');
+    const connectBtn = document.getElementById('connect-server-btn');
+    const discoverBtn = document.getElementById('discover-servers-btn');
+    
+    let availableServers = [];
+    
+    // Discover servers in LAN
+    if (discoverBtn) {
+      discoverBtn.addEventListener('click', async function() {
+        discoverBtn.disabled = true;
+        discoverBtn.textContent = 'Discovering...';
+        
+        try {
+          const response = await fetch('/remote/api/discover-servers/', {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          const data = await response.json();
+          
+          if (data.success) {
+            availableServers = data.servers || [];
+            updateServerList();
+            showNotification('success', `Found ${availableServers.length} server(s)`);
+          } else {
+            showNotification('error', data.message || 'Failed to discover servers');
+          }
+        } catch (error) {
+          showNotification('error', 'Error discovering servers: ' + error.message);
+        } finally {
+          discoverBtn.disabled = false;
+          discoverBtn.textContent = 'Discover';
+        }
+      });
+    }
+    
+    // Update server dropdown list
+    function updateServerList() {
+      // Clear existing options except the first one
+      serverSelect.innerHTML = '<option value="" disabled selected>Select Server</option>';
+      
+      if (availableServers.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No servers found';
+        option.disabled = true;
+        serverSelect.appendChild(option);
+        return;
+      }
+      
+      availableServers.forEach(server => {
+        const option = document.createElement('option');
+        option.value = server.ip;
+        option.textContent = `${server.name || server.ip} (${server.ip})`;
+        serverSelect.appendChild(option);
+      });
+    }
+    
+    // Connect to selected server
+    if (connectBtn) {
+      connectBtn.addEventListener('click', async function() {
+        const selectedIp = serverSelect.value;
+        
+        if (!selectedIp) {
+          showNotification('warning', 'Please select a server first');
+          return;
+        }
+        
+        connectBtn.disabled = true;
+        connectBtn.textContent = 'Connecting...';
+        
+        try {
+          const response = await fetch('/remote/api/connect-server/', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ server_ip: selectedIp })
+          });
+          
+          const data = await response.json();
+          
+          if (data.success) {
+            showNotification('success', `Connected to ${selectedIp}`);
+            // Update button to show connected state
+            connectBtn.classList.remove('bg-primary-700', 'hover:bg-primary-800', 'dark:bg-primary-600', 'dark:hover:bg-primary-700');
+            connectBtn.classList.add('bg-green-600', 'hover:bg-green-700', 'dark:bg-green-500', 'dark:hover:bg-green-600');
+            connectBtn.textContent = 'Connected';
+            // Show disconnect button, hide connect button
+            connectBtn.classList.add('hidden');
+            document.getElementById('disconnect-server-btn').classList.remove('hidden');
+          } else {
+            showNotification('error', data.message || 'Failed to connect');
+            connectBtn.textContent = 'Connect';
+          }
+        } catch (error) {
+          showNotification('error', 'Connection error: ' + error.message);
+          connectBtn.textContent = 'Connect';
+        } finally {
+          connectBtn.disabled = false;
+        }
+      });
+    }
+    
+    // Disconnect from server
+    const disconnectBtn = document.getElementById('disconnect-server-btn');
+    if (disconnectBtn) {
+      disconnectBtn.addEventListener('click', async function() {
+        disconnectBtn.disabled = true;
+        disconnectBtn.textContent = 'Disconnecting...';
+        
+        try {
+          const response = await fetch('/remote/api/disconnect-server/', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCookie('csrftoken')
+            }
+          });
+          
+          const data = await response.json();
+          
+          if (data.success) {
+            showNotification('success', 'Disconnected from server');
+            
+            // XÓA SẠCH sessionStorage (servers phải discover lại!)
+            sessionStorage.clear();
+            availableServers = [];
+            connectedServer = '';
+            
+            // Reset UI
+            serverSelect.innerHTML = '<option value="" disabled selected>Select Server</option>';
+            
+            // Show connect button, hide disconnect button
+            connectBtn.classList.remove('hidden', 'bg-green-600', 'hover:bg-green-700', 'dark:bg-green-500', 'dark:hover:bg-green-600');
+            connectBtn.classList.add('bg-primary-700', 'hover:bg-primary-800', 'dark:bg-primary-600', 'dark:hover:bg-primary-700');
+            connectBtn.textContent = 'Connect';
+            disconnectBtn.classList.add('hidden');
+          } else {
+            showNotification('error', data.message || 'Failed to disconnect');
+          }
+        } catch (error) {
+          showNotification('error', 'Disconnect error: ' + error.message);
+        } finally {
+          disconnectBtn.disabled = false;
+          disconnectBtn.textContent = 'Disconnect';
+        }
+      });
+    }
+    
+    // Reset connect button when server selection changes
+    if (serverSelect) {
+      serverSelect.addEventListener('change', function() {
+        connectBtn.classList.remove('bg-green-600', 'hover:bg-green-700', 'dark:bg-green-500', 'dark:hover:bg-green-600');
+        connectBtn.classList.add('bg-primary-700', 'hover:bg-primary-800', 'dark:bg-primary-600', 'dark:hover:bg-primary-700');
+        connectBtn.textContent = 'Connect';
+      });
+    }
+    
+    // Helper function to get CSRF token
+    function getCookie(name) {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === (name + '=')) {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+    }
+    
+    // Show notification (using Flowbite toast if available, otherwise alert)
+    function showNotification(type, message) {
+      // Simple alert for now - can be enhanced with toast notifications
+      const colors = {
+        'success': '✓',
+        'error': '✗',
+        'warning': '⚠'
+      };
+      alert(`${colors[type] || ''} ${message}`);
+    }
+    
+    // Auto-discover on page load (optional)
+    // Uncomment if you want automatic discovery when page loads
+    // setTimeout(() => discoverBtn.click(), 500);
+  });
+</script>
