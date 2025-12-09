@@ -412,9 +412,63 @@
   document.addEventListener('DOMContentLoaded', function() {
     const serverSelect = document.getElementById('server-select');
     const connectBtn = document.getElementById('connect-server-btn');
+    const disconnectBtn = document.getElementById('disconnect-server-btn');
     const discoverBtn = document.getElementById('discover-servers-btn');
     
     let availableServers = [];
+    
+    // ==================== localStorage STATE MANAGEMENT ====================
+    // Lưu/đọc trạng thái kết nối từ localStorage để tồn tại qua các lần reload
+    
+    /**
+     * Lưu thông tin server đang kết nối vào localStorage
+     * @param {Object} serverInfo - {ip, name}
+     */
+    function saveConnectionState(serverInfo) {
+      localStorage.setItem('connectedServer', JSON.stringify(serverInfo));
+      localStorage.setItem('connectionTime', new Date().toISOString());
+    }
+    
+    /**
+     * Lấy thông tin server đang kết nối từ localStorage
+     * @returns {Object|null} - {ip, name} hoặc null nếu không có
+     */
+    function getConnectionState() {
+      const saved = localStorage.getItem('connectedServer');
+      return saved ? JSON.parse(saved) : null;
+    }
+    
+    /**
+     * Xóa trạng thái kết nối khỏi localStorage
+     */
+    function clearConnectionState() {
+      localStorage.removeItem('connectedServer');
+      localStorage.removeItem('connectionTime');
+    }
+    
+    /**
+     * Khôi phục UI từ localStorage khi page load
+     * Hiển thị lại server đang connect và button Disconnect
+     */
+    function restoreConnectionUI() {
+      const connected = getConnectionState();
+      
+      if (connected) {
+        // Tạo option cho server đang connect
+        serverSelect.innerHTML = '<option value="" disabled>Select Server</option>';
+        const option = document.createElement('option');
+        option.value = connected.ip;
+        option.textContent = `${connected.name || connected.ip} (${connected.ip})`;
+        option.selected = true;
+        serverSelect.appendChild(option);
+        
+        // Hiển thị trạng thái "Connected"
+        connectBtn.classList.add('hidden');
+        disconnectBtn.classList.remove('hidden');
+        
+        console.log('✅ Restored connection state:', connected);
+      }
+    }
     
     // Discover servers in LAN
     if (discoverBtn) {
@@ -430,10 +484,20 @@
             }
           });
           
+          // Kiểm tra response có OK không
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          // Parse JSON response
           const data = await response.json();
           
           if (data.success) {
             availableServers = data.servers || [];
+            
+            // LƯU DANH SÁCH SERVERS vào localStorage (cache tạm thời)
+            localStorage.setItem('discoveredServers', JSON.stringify(availableServers));
+            
             updateServerList();
             showNotification('success', `Found ${availableServers.length} server(s)`);
           } else {
@@ -450,7 +514,20 @@
     
     // Update server dropdown list
     function updateServerList() {
-      // Clear existing options except the first one
+      const connected = getConnectionState();
+      
+      // Nếu đang connected, giữ nguyên option của server đang connect
+      if (connected) {
+        serverSelect.innerHTML = '<option value="" disabled>Select Server</option>';
+        const option = document.createElement('option');
+        option.value = connected.ip;
+        option.textContent = `${connected.name} (${connected.ip})`;
+        option.selected = true;
+        serverSelect.appendChild(option);
+        return;
+      }
+      
+      // Chưa connect → Hiển thị danh sách servers để chọn
       serverSelect.innerHTML = '<option value="" disabled selected>Select Server</option>';
       
       if (availableServers.length === 0) {
@@ -497,13 +574,21 @@
           
           if (data.success) {
             showNotification('success', `Connected to ${selectedIp}`);
+            
+            // LƯU TRẠNG THÁI VÀO localStorage (để tồn tại khi reload)
+            const selectedServer = availableServers.find(s => s.ip === selectedIp);
+            saveConnectionState({
+              ip: selectedIp,
+              name: selectedServer ? selectedServer.name : selectedIp
+            });
+            
             // Update button to show connected state
             connectBtn.classList.remove('bg-primary-700', 'hover:bg-primary-800', 'dark:bg-primary-600', 'dark:hover:bg-primary-700');
             connectBtn.classList.add('bg-green-600', 'hover:bg-green-700', 'dark:bg-green-500', 'dark:hover:bg-green-600');
             connectBtn.textContent = 'Connected';
             // Show disconnect button, hide connect button
             connectBtn.classList.add('hidden');
-            document.getElementById('disconnect-server-btn').classList.remove('hidden');
+            disconnectBtn.classList.remove('hidden');
           } else {
             showNotification('error', data.message || 'Failed to connect');
             connectBtn.textContent = 'Connect';
@@ -518,7 +603,6 @@
     }
     
     // Disconnect from server
-    const disconnectBtn = document.getElementById('disconnect-server-btn');
     if (disconnectBtn) {
       disconnectBtn.addEventListener('click', async function() {
         disconnectBtn.disabled = true;
@@ -538,10 +622,12 @@
           if (data.success) {
             showNotification('success', 'Disconnected from server');
             
+            // XÓA TRẠNG THÁI KẾT NỐI khỏi localStorage
+            clearConnectionState();
+            
             // XÓA SẠCH sessionStorage (servers phải discover lại!)
             sessionStorage.clear();
             availableServers = [];
-            connectedServer = '';
             
             // Reset UI
             serverSelect.innerHTML = '<option value="" disabled selected>Select Server</option>';
@@ -602,5 +688,10 @@
     // Auto-discover on page load (optional)
     // Uncomment if you want automatic discovery when page loads
     // setTimeout(() => discoverBtn.click(), 500);
+    
+    // ==================== KHÔI PHỤC UI TỪ localStorage ====================
+    // Gọi CUỐI CÙNG sau khi tất cả event listeners đã được đăng ký
+    // Đảm bảo các button đã sẵn sàng trước khi restore UI
+    restoreConnectionUI();
   });
 </script>
