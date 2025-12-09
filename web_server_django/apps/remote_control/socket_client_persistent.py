@@ -11,10 +11,9 @@ import socket
 import base64
 import threading
 import logging
+import atexit
 
 logger = logging.getLogger(__name__)
-
-
 class PersistentRemoteClient:
     """
     Client duy trì kết nối TCP persistent với C# Server
@@ -30,6 +29,20 @@ class PersistentRemoteClient:
     # Value = PersistentRemoteClient instance
     _instances = {}
     _lock = threading.Lock()  # Thread-safe khi có nhiều requests cùng lúc
+    
+    @classmethod
+    def cleanup_all(cls):
+        """Cleanup tất cả connections khi Django shutdown"""
+        logger.info("Cleaning up all persistent connections...")
+        with cls._lock:
+            for session_id, instance in list(cls._instances.items()):
+                try:
+                    instance.disconnect()
+                    logger.info(f"Closed connection for session {session_id}")
+                except Exception as e:
+                    logger.error(f"Error closing session {session_id}: {e}")
+            cls._instances.clear()
+        logger.info("All connections cleaned up")
     
     def __init__(self, host, port, timeout=60):
         """
@@ -88,7 +101,21 @@ class PersistentRemoteClient:
                 cls._instances[session_id] = instance
                 logger.info(f"Created new persistent connection for session {session_id}")
             else:
-                logger.info(f"Reusing existing connection for session {session_id}")
+                # Có rồi → Kiểm tra health, nếu chết thì xóa và tạo lại
+                instance = cls._instances[session_id]
+                if not instance.is_alive():
+                    logger.warning(f"Existing connection for session {session_id} is dead, recreating...")
+                    try:
+                        instance.disconnect()
+                    except:
+                        pass
+                    # Tạo mới
+                    instance = cls(host, port, timeout)
+                    instance.connect()
+                    cls._instances[session_id] = instance
+                    logger.info(f"Recreated connection for session {session_id}")
+                else:
+                    logger.info(f"Reusing existing connection for session {session_id}")
             
             return cls._instances[session_id]
     
@@ -168,6 +195,27 @@ class PersistentRemoteClient:
         self.connected = False
         logger.info("Disconnected from server")
     
+    def is_alive(self):
+        """Kiểm tra xem socket còn sống không"""
+        if not self.socket or not self.connected:
+            return False
+        try:
+            # Send empty data để test connection
+            self.socket.send(b'')
+            return True
+        except:
+            return False
+    
+    def ensure_connected(self):
+        """Đảm bảo socket đang connected, reconnect nếu chết"""
+        if not self.is_alive():
+            logger.warning("Socket died, reconnecting...")
+            try:
+                self.disconnect()
+            except:
+                pass
+            self.connect()
+    
     def recvall(self, n):
         """
         Helper: Nhận đủ n bytes từ socket
@@ -202,6 +250,13 @@ class PersistentRemoteClient:
         Returns:
             dict: {"status": "success/error", "data": ..., "message": ...}
         """
+        # Auto-reconnect nếu socket chết
+        try:
+            self.ensure_connected()
+        except Exception as e:
+            logger.error(f"Failed to ensure connection: {e}")
+            return {"status": "error", "message": "Not connected to server and reconnect failed", "data": None}
+        
         if not self.connected:
             return {"status": "error", "message": "Not connected to server", "data": None}
         
@@ -336,3 +391,251 @@ class PersistentRemoteClient:
             self.connected = False
         
         return {"status": status, "data": response_data, "message": msg}
+    
+    # ==================== WEBCAM METHODS ====================
+    
+    def webcam_on(self):
+        """
+        Bật camera (chỉ preview, chưa ghi video)
+        
+        Returns:
+            dict: {"success": bool, "message": str}
+        """
+        try:
+            self.writer.write("WEBCAM\n")
+            self.writer.flush()
+            
+            self.writer.write("ON\n")
+            self.writer.flush()
+            
+            response = self.reader.readline().strip()
+            
+            if response == "CAMERA_ON":
+                return {"success": True, "message": "Camera turned on"}
+            else:
+                return {"success": False, "message": response}
+        
+        except Exception as e:
+            logger.error(f"Webcam ON error: {str(e)}")
+            return {"success": False, "message": f"Error: {str(e)}"}
+    
+    def webcam_off(self):
+        """
+        Tắt camera
+        
+        Returns:
+            dict: {"success": bool, "message": str}
+        """
+        try:
+            self.writer.write("WEBCAM\n")
+            self.writer.flush()
+            
+            self.writer.write("OFF\n")
+            self.writer.flush()
+            
+            response = self.reader.readline().strip()
+            
+            # Thoát module webcam
+            self.writer.write("QUIT\n")
+            self.writer.flush()
+            
+            if response == "CAMERA_OFF":
+                return {"success": True, "message": "Camera turned off"}
+            else:
+                return {"success": False, "message": response}
+        
+        except Exception as e:
+            logger.error(f"Webcam OFF error: {str(e)}")
+            return {"success": False, "message": f"Error: {str(e)}"}
+    
+    def webcam_get_frame(self):
+        """
+        Lấy 1 frame hiện tại từ camera (JPEG bytes)
+        Dùng cho streaming preview
+        
+        Returns:
+            bytes hoặc None
+        """
+        try:
+            self.writer.write("WEBCAM\n")
+            self.writer.flush()
+            
+            self.writer.write("GET_FRAME\n")
+            self.writer.flush()
+            
+            # Đọc size
+            size_str = self.reader.readline().strip()
+            size = int(size_str)
+            
+            if size == 0:
+                # Không có frame
+                self.writer.write("QUIT\n")
+                self.writer.flush()
+                return None
+            
+            # Đọc bytes
+            frame_data = b''
+            while len(frame_data) < size:
+                chunk = self.socket.recv(min(4096, size - len(frame_data)))
+                if not chunk:
+                    break
+                frame_data += chunk
+            
+            # Thoát module
+            self.writer.write("QUIT\n")
+            self.writer.flush()
+            
+            return frame_data
+        
+        except Exception as e:
+            logger.error(f"Get frame error: {str(e)}")
+            return None
+    
+    def webcam_start_recording(self):
+        """
+        Bắt đầu ghi video (camera phải đã ON)
+        
+        Returns:
+            dict: {"success": bool, "message": str}
+        """
+        try:
+            self.writer.write("WEBCAM\n")
+            self.writer.flush()
+            
+            self.writer.write("START_REC\n")
+            self.writer.flush()
+            
+            response = self.reader.readline().strip()
+            
+            # Thoát module
+            self.writer.write("QUIT\n")
+            self.writer.flush()
+            
+            if response == "RECORDING_STARTED":
+                return {"success": True, "message": "Recording started"}
+            else:
+                return {"success": False, "message": response}
+        
+        except Exception as e:
+            logger.error(f"Start recording error: {str(e)}")
+            return {"success": False, "message": f"Error: {str(e)}"}
+    
+    def webcam_stop_recording(self):
+        """
+        Dừng ghi video, nhận file video về
+        
+        Returns:
+            dict: {
+                "success": bool,
+                "message": str,
+                "filename": str,
+                "file_size": int,
+                "video_data": bytes
+            }
+        """
+        try:
+            self.writer.write("WEBCAM\n")
+            self.writer.flush()
+            
+            self.writer.write("STOP_REC\n")
+            self.writer.flush()
+            
+            # Đọc response: "RECORDING_STOPPED|filename|filesize"
+            response = self.reader.readline().strip()
+            
+            if not response.startswith("RECORDING_STOPPED"):
+                self.writer.write("QUIT\n")
+                self.writer.flush()
+                return {"success": False, "message": response}
+            
+            parts = response.split('|')
+            filename = parts[1] if len(parts) > 1 else ""
+            file_size = int(parts[2]) if len(parts) > 2 else 0
+            
+            if file_size == 0:
+                self.writer.write("QUIT\n")
+                self.writer.flush()
+                return {"success": False, "message": "No video file generated"}
+            
+            # Đọc size confirmation
+            size_str = self.reader.readline().strip()
+            size = int(size_str)
+            
+            if size == 0:
+                self.writer.write("QUIT\n")
+                self.writer.flush()
+                return {"success": False, "message": "Failed to receive video"}
+            
+            # Đọc video bytes (có thể rất lớn!)
+            logger.info(f"Receiving video: {filename}, size: {size} bytes")
+            video_data = b''
+            while len(video_data) < size:
+                chunk_size = min(1024 * 1024, size - len(video_data))  # 1MB chunks
+                chunk = self.socket.recv(chunk_size)
+                if not chunk:
+                    break
+                video_data += chunk
+                
+                # Log progress
+                progress = (len(video_data) / size) * 100
+                if len(video_data) % (10 * 1024 * 1024) == 0:  # Log every 10MB
+                    logger.info(f"Received: {progress:.1f}%")
+            
+            # Thoát module
+            self.writer.write("QUIT\n")
+            self.writer.flush()
+            
+            return {
+                "success": True,
+                "message": "Recording stopped",
+                "filename": filename,
+                "file_size": file_size,
+                "video_data": video_data
+            }
+        
+        except Exception as e:
+            logger.error(f"Stop recording error: {str(e)}")
+            return {"success": False, "message": f"Error: {str(e)}"}
+    
+    def webcam_status(self):
+        """
+        Lấy trạng thái camera và recording
+        
+        Returns:
+            dict: {
+                "camera_on": bool,
+                "recording": bool
+            }
+        """
+        try:
+            self.writer.write("WEBCAM\n")
+            self.writer.flush()
+            
+            self.writer.write("STATUS\n")
+            self.writer.flush()
+            
+            # Response: "camera_on:true|recording:false"
+            response = self.reader.readline().strip()
+            
+            # Thoát module
+            self.writer.write("QUIT\n")
+            self.writer.flush()
+            
+            # Parse response
+            parts = response.split('|')
+            camera_on = parts[0].split(':')[1] == 'true' if len(parts) > 0 else False
+            recording = parts[1].split(':')[1] == 'true' if len(parts) > 1 else False
+            
+            return {
+                "camera_on": camera_on,
+                "recording": recording
+            }
+        
+        except Exception as e:
+            logger.error(f"Get status error: {str(e)}")
+            return {"camera_on": False, "recording": False}
+
+
+# ==================== CLEANUP ON DJANGO SHUTDOWN ====================
+# Đăng ký cleanup function để đóng tất cả socket khi Django shutdown
+atexit.register(PersistentRemoteClient.cleanup_all)

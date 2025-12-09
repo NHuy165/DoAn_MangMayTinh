@@ -25,6 +25,9 @@ urlpatterns = [
     path('power/', views.power_page, name='power'),
     
     # ==================== API ENDPOINTS ====================
+    # API Endpoints - Server Info
+    path('api/server-info/', views.server_info, name='api_server_info'),
+    
     # API Endpoints - UDP Discovery (NEW!)
     path('api/discover-servers/', views.discover_servers, name='api_discover_servers'),
     
@@ -49,6 +52,16 @@ urlpatterns = [
     
     # API Endpoints - Screenshot
     path('api/screenshot/', views.take_screenshot, name='api_screenshot'),
+    
+    # API Endpoints - Webcam
+    path('api/webcam/on/', views.webcam_on, name='api_webcam_on'),
+    path('api/webcam/off/', views.webcam_off, name='api_webcam_off'),
+    path('api/webcam/stream/', views.webcam_stream, name='api_webcam_stream'),
+    path('api/webcam/start-recording/', views.webcam_start_recording, name='api_webcam_start_recording'),
+    path('api/webcam/stop-recording/', views.webcam_stop_recording, name='api_webcam_stop_recording'),
+    path('api/webcam/status/', views.webcam_status, name='api_webcam_status'),
+    path('api/webcam/list/', views.webcam_list, name='api_webcam_list'),
+    path('api/webcam/delete/<int:recording_id>/', views.webcam_delete, name='api_webcam_delete'),
     
     # API Endpoints - Power Control
     path('api/power/', views.power_action, name='api_power_action'),

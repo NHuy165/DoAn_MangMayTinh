@@ -409,13 +409,32 @@
 
 <script>
   // Server discovery and connection functionality
-  document.addEventListener('DOMContentLoaded', function() {
+  document.addEventListener('DOMContentLoaded', async function() {
     const serverSelect = document.getElementById('server-select');
     const connectBtn = document.getElementById('connect-server-btn');
     const disconnectBtn = document.getElementById('disconnect-server-btn');
     const discoverBtn = document.getElementById('discover-servers-btn');
     
     let availableServers = [];
+    
+    // ==================== CHECK SERVER RESTART ====================
+    try {
+      const response = await fetch('/remote/api/server-info/');
+      const data = await response.json();
+      const serverStartTime = data.start_time;
+      const savedStartTime = localStorage.getItem('serverStartTime');
+      
+      if (savedStartTime && parseFloat(savedStartTime) !== serverStartTime) {
+        console.log('🔄 Server restarted → Connection reset');
+        localStorage.removeItem('connectedServer');
+        localStorage.removeItem('connectionTime');
+        localStorage.removeItem('discoveredServers');
+      }
+      
+      localStorage.setItem('serverStartTime', serverStartTime.toString());
+    } catch (error) {
+      console.error('Server info check failed:', error);
+    }
     
     // ==================== localStorage STATE MANAGEMENT ====================
     // Lưu/đọc trạng thái kết nối từ localStorage để tồn tại qua các lần reload
@@ -466,7 +485,7 @@
         connectBtn.classList.add('hidden');
         disconnectBtn.classList.remove('hidden');
         
-        console.log('✅ Restored connection state:', connected);
+        console.log(`✅ Restored: ${connected.name || connected.ip}`);
       }
     }
     
@@ -494,9 +513,8 @@
           
           if (data.success) {
             availableServers = data.servers || [];
-            
-            // LƯU DANH SÁCH SERVERS vào localStorage (cache tạm thời)
             localStorage.setItem('discoveredServers', JSON.stringify(availableServers));
+            console.log(`🔍 Discovered ${availableServers.length} server(s)`);
             
             updateServerList();
             showNotification('success', `Found ${availableServers.length} server(s)`);
@@ -575,12 +593,13 @@
           if (data.success) {
             showNotification('success', `Connected to ${selectedIp}`);
             
-            // LƯU TRẠNG THÁI VÀO localStorage (để tồn tại khi reload)
             const selectedServer = availableServers.find(s => s.ip === selectedIp);
-            saveConnectionState({
+            const serverInfo = {
               ip: selectedIp,
               name: selectedServer ? selectedServer.name : selectedIp
-            });
+            };
+            saveConnectionState(serverInfo);
+            console.log(`✅ Connected: ${serverInfo.name}`);
             
             // Update button to show connected state
             connectBtn.classList.remove('bg-primary-700', 'hover:bg-primary-800', 'dark:bg-primary-600', 'dark:hover:bg-primary-700');
@@ -622,8 +641,8 @@
           if (data.success) {
             showNotification('success', 'Disconnected from server');
             
-            // XÓA TRẠNG THÁI KẾT NỐI khỏi localStorage
             clearConnectionState();
+            console.log('🔌 Disconnected');
             
             // XÓA SẠCH sessionStorage (servers phải discover lại!)
             sessionStorage.clear();
