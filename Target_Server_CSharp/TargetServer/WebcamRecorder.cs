@@ -3,173 +3,154 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using AForge.Video;
 using AForge.Video.DirectShow;
 using Accord.Video.FFMPEG;
 
 namespace WebcamRecorder
 {
-    /// <summary>
-    /// Class quản lý webcam: Bật/Tắt camera, Live preview, Recording video
-    /// Architecture: Tách biệt Camera ON/OFF và Recording START/STOP
-    /// </summary>
     public class WebcamCapture
     {
-        // ==================== STATIC VARIABLES ====================
+        // Thư mục lưu video tạm
         public static string outputFolder = Path.Combine(Path.GetTempPath(), "webcam_recordings");
         public static string currentVideoPath = "";
-        
-        // ==================== INSTANCE VARIABLES ====================
+
         private VideoCaptureDevice videoSource;
         private VideoFileWriter videoWriter;
         private Bitmap currentFrame;
-        private object frameLock = new object();
-        private bool isRecording = false;
+
+        // --- CÁC BIẾN KHÓA (LOCK) ĐỂ TRÁNH XUNG ĐỘT ---
+        private object frameLock = new object();      // Khóa khi truy cập ảnh hiện tại
+        private object videoWriteLock = new object(); // Khóa riêng cho việc ghi video
+
+        private volatile bool isRecording = false;
         private bool isCameraOn = false;
-        
-        // Video settings - HIGH QUALITY
-        private const int TARGET_FPS = 30;
-        private const int VIDEO_BITRATE = 4000000; // 4 Mbps - High quality
-        
-        /// <summary>
-        /// Constructor: Tạo thư mục output nếu chưa có
-        /// </summary>
+
+        // --- BIẾN LƯU KÍCH THƯỚC THẬT CỦA CAMERA ---
+        // Quan trọng: Phải lưu lại kích thước thật để tạo video đúng kích thước đó
+        private int actualWidth = 640;
+        private int actualHeight = 480;
+
+        private const int TARGET_FPS = 25;     // 25 FPS là chuẩn an toàn cho webcam
+        private const int VIDEO_BITRATE = 1000000; // 1 Mbps (Đủ nét, file nhẹ, không lag mạng)
+
         public WebcamCapture()
         {
-            if (!Directory.Exists(outputFolder))
-            {
-                Directory.CreateDirectory(outputFolder);
-            }
+            if (!Directory.Exists(outputFolder)) Directory.CreateDirectory(outputFolder);
         }
-        
-        // ==================== CAMERA CONTROL ====================
-        
-        /// <summary>
-        /// Bật camera - Bắt đầu capture frames (CHƯA ghi video)
-        /// Return: "CAMERA_ON" hoặc "ERROR:..."
-        /// </summary>
+
         public string TurnOn()
         {
             try
             {
-                if (isCameraOn)
-                {
-                    return "ERROR: Camera is already ON";
-                }
-                
-                // Lấy danh sách cameras có sẵn
+                if (isCameraOn) return "ERROR: Camera is already ON";
+
                 FilterInfoCollection videoDevices = new FilterInfoCollection(FilterCategory.VideoInputDevice);
-                
-                if (videoDevices.Count == 0)
-                {
-                    return "ERROR: No camera found";
-                }
-                
-                // Chọn camera đầu tiên
+                if (videoDevices.Count == 0) return "ERROR: No camera found";
+
                 videoSource = new VideoCaptureDevice(videoDevices[0].MonikerString);
-                
-                // Chọn resolution CAO NHẤT mà camera hỗ trợ
+
+                // --- TỰ ĐỘNG CHỌN ĐỘ PHÂN GIẢI PHÙ HỢP ---
+                // Ưu tiên chọn độ phân giải gần 640x480 nhất để nhẹ mạng LAN
                 if (videoSource.VideoCapabilities.Length > 0)
                 {
-                    VideoCapabilities bestCapability = videoSource.VideoCapabilities
-                        .OrderByDescending(c => c.FrameSize.Width * c.FrameSize.Height)
-                        .ThenByDescending(c => c.AverageFrameRate)
+                    var capability = videoSource.VideoCapabilities
+                        .OrderBy(c => Math.Abs(c.FrameSize.Width - 640))
                         .First();
-                    
-                    videoSource.VideoResolution = bestCapability;
+
+                    videoSource.VideoResolution = capability;
+
+                    // CẬP NHẬT KÍCH THƯỚC THẬT VÀO BIẾN
+                    actualWidth = capability.FrameSize.Width;
+                    actualHeight = capability.FrameSize.Height;
                 }
-                
-                // Đăng ký event handler để nhận frames
+
                 videoSource.NewFrame += new NewFrameEventHandler(OnNewFrame);
-                
-                // Bật camera
                 videoSource.Start();
                 isCameraOn = true;
-                
                 return "CAMERA_ON";
             }
-            catch (Exception ex)
-            {
-                return "ERROR: " + ex.Message;
-            }
+            catch (Exception ex) { return "ERROR: " + ex.Message; }
         }
-        
-        /// <summary>
-        /// Tắt camera - Dừng capture frames
-        /// Tự động dừng recording nếu đang ghi
-        /// Return: "CAMERA_OFF"
-        /// </summary>
+
         public string TurnOff()
         {
             try
             {
-                // Dừng recording nếu đang ghi
-                if (isRecording)
-                {
-                    StopRecording();
-                }
-                
+                if (isRecording) StopRecording();
+
                 if (videoSource != null && videoSource.IsRunning)
                 {
                     videoSource.SignalToStop();
-                    videoSource.WaitForStop();
+                    // Đợi tối đa 1 giây để camera tắt hẳn
+                    for (int i = 0; i < 10; i++)
+                    {
+                        if (!videoSource.IsRunning) break;
+                        Thread.Sleep(100);
+                    }
+                    videoSource.Stop();
                     videoSource.NewFrame -= OnNewFrame;
                     videoSource = null;
                 }
-                
+
                 isCameraOn = false;
-                currentFrame = null;
-                
+                lock (frameLock)
+                {
+                    if (currentFrame != null) { currentFrame.Dispose(); currentFrame = null; }
+                }
+
                 return "CAMERA_OFF";
             }
-            catch (Exception ex)
-            {
-                return "ERROR: " + ex.Message;
-            }
+            catch (Exception ex) { return "ERROR: " + ex.Message; }
         }
-        
-        /// <summary>
-        /// Event handler: Được gọi mỗi khi có frame mới từ camera
-        /// Lưu frame vào currentFrame để streaming
-        /// Ghi vào video nếu đang recording
-        /// </summary>
+
         private void OnNewFrame(object sender, NewFrameEventArgs eventArgs)
         {
             try
             {
+                Bitmap videoFrame = null;
+
+                // 1. Clone frame để hiển thị (giữ lock cực nhanh)
                 lock (frameLock)
                 {
-                    // Clone frame để tránh disposed
-                    currentFrame?.Dispose();
+                    if (currentFrame != null) currentFrame.Dispose();
                     currentFrame = (Bitmap)eventArgs.Frame.Clone();
-                    
-                    // Nếu đang recording → Ghi frame vào video
-                    if (isRecording && videoWriter != null && videoWriter.IsOpen)
+
+                    // Nếu đang ghi hình, clone thêm 1 bản để ghi
+                    if (isRecording) videoFrame = (Bitmap)eventArgs.Frame.Clone();
+                }
+
+                // 2. Ghi video (Thực hiện ngoài lock frame để không chặn streaming)
+                if (videoFrame != null)
+                {
+                    // Kiểm tra an toàn: Nếu kích thước ảnh bị đổi đột ngột thì bỏ qua để tránh Crash
+                    if (videoFrame.Width != actualWidth || videoFrame.Height != actualHeight)
                     {
-                        videoWriter.WriteVideoFrame(currentFrame);
+                        videoFrame.Dispose();
+                        return;
                     }
+
+                    lock (videoWriteLock)
+                    {
+                        if (isRecording && videoWriter != null && videoWriter.IsOpen)
+                        {
+                            try { videoWriter.WriteVideoFrame(videoFrame); } catch { }
+                        }
+                    }
+                    videoFrame.Dispose();
                 }
             }
             catch { }
         }
-        
-        // ==================== FRAME STREAMING ====================
-        
-        /// <summary>
-        /// Lấy frame hiện tại dưới dạng JPEG bytes (để streaming lên web)
-        /// Return: byte[] hoặc null nếu không có frame
-        /// </summary>
+
         public byte[] GetCurrentFrameAsJpeg()
         {
             try
             {
                 lock (frameLock)
                 {
-                    if (currentFrame == null)
-                    {
-                        return null;
-                    }
-                    
+                    if (currentFrame == null) return null;
                     using (MemoryStream ms = new MemoryStream())
                     {
                         currentFrame.Save(ms, ImageFormat.Jpeg);
@@ -177,148 +158,94 @@ namespace WebcamRecorder
                     }
                 }
             }
-            catch
-            {
-                return null;
-            }
+            catch { return null; }
         }
-        
-        // ==================== VIDEO RECORDING ====================
-        
-        /// <summary>
-        /// Bắt đầu ghi video (camera phải đã BẬT trước)
-        /// Return: "RECORDING_STARTED" hoặc "ERROR:..."
-        /// </summary>
+
         public string StartRecording()
         {
             try
             {
-                if (!isCameraOn)
-                {
-                    return "ERROR: Camera is not ON";
-                }
-                
-                if (isRecording)
-                {
-                    return "ERROR: Already recording";
-                }
-                
-                if (currentFrame == null)
-                {
-                    return "ERROR: No frame available. Wait a moment and try again.";
-                }
-                
-                // Tạo tên file với timestamp
+                if (!isCameraOn) return "ERROR: Camera is not ON";
+                if (isRecording) return "ERROR: Already recording";
+
                 string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 currentVideoPath = Path.Combine(outputFolder, $"webcam_{timestamp}.avi");
-                
-                // Khởi tạo VideoFileWriter với codec H.264
-                videoWriter = new VideoFileWriter();
-                
-                lock (frameLock)
+
+                // --- KHỞI TẠO VIDEO WRITER VỚI KÍCH THƯỚC THẬT ---
+                lock (videoWriteLock)
                 {
-                    if (currentFrame != null)
-                    {
-                        // Mở file với cấu hình HIGH QUALITY
-                        videoWriter.Open(
-                            currentVideoPath,
-                            currentFrame.Width,
-                            currentFrame.Height,
-                            TARGET_FPS,
-                            VideoCodec.MPEG4,
-                            VIDEO_BITRATE
-                        );
-                    }
+                    videoWriter = new VideoFileWriter();
+
+                    // QUAN TRỌNG NHẤT:
+                    // Sử dụng actualWidth và actualHeight đã lấy từ lúc TurnOn()
+                    // Điều này đảm bảo kích thước file video KHỚP 100% với kích thước Camera
+                    // => KHÔNG BAO GIỜ BỊ TREO (HANG)
+                    videoWriter.Open(currentVideoPath, actualWidth, actualHeight, TARGET_FPS, VideoCodec.MPEG4, VIDEO_BITRATE);
                 }
-                
+
                 isRecording = true;
                 return "RECORDING_STARTED";
             }
             catch (Exception ex)
             {
+                // Reset nếu lỗi
+                isRecording = false;
+                lock (videoWriteLock)
+                {
+                    if (videoWriter != null) { videoWriter.Dispose(); videoWriter = null; }
+                }
                 return "ERROR: " + ex.Message;
             }
         }
-        
-        /// <summary>
-        /// Dừng ghi video, đóng file
-        /// Return: "RECORDING_STOPPED|filename|filesize" hoặc "ERROR:..."
-        /// </summary>
+
         public string StopRecording()
         {
             try
             {
-                if (!isRecording)
-                {
-                    return "ERROR: Not recording";
-                }
-                
+                if (!isRecording) return "ERROR: Not recording";
+
                 isRecording = false;
-                
-                // Đóng video writer
-                if (videoWriter != null)
+
+                // Đợi 0.5s để frame cuối cùng được ghi xong
+                Thread.Sleep(500);
+
+                lock (videoWriteLock)
                 {
-                    videoWriter.Close();
-                    videoWriter.Dispose();
-                    videoWriter = null;
+                    if (videoWriter != null)
+                    {
+                        if (videoWriter.IsOpen) videoWriter.Close();
+                        videoWriter.Dispose();
+                        videoWriter = null;
+                    }
                 }
-                
-                // Lấy thông tin file
+
                 if (File.Exists(currentVideoPath))
                 {
-                    FileInfo fileInfo = new FileInfo(currentVideoPath);
-                    string filename = Path.GetFileName(currentVideoPath);
-                    long fileSize = fileInfo.Length;
-                    
-                    return $"RECORDING_STOPPED|{filename}|{fileSize}";
+                    long fileSize = new FileInfo(currentVideoPath).Length;
+                    return $"RECORDING_STOPPED|{Path.GetFileName(currentVideoPath)}|{fileSize}";
                 }
-                
+
                 return "RECORDING_STOPPED||0";
             }
-            catch (Exception ex)
-            {
-                return "ERROR: " + ex.Message;
-            }
+            catch (Exception ex) { return "ERROR: " + ex.Message; }
         }
-        
-        // ==================== STATUS & UTILITY ====================
-        
-        /// <summary>
-        /// Lấy trạng thái hiện tại
-        /// Return: "camera_on:true/false|recording:true/false"
-        /// </summary>
+
         public string GetStatus()
         {
             return $"camera_on:{isCameraOn.ToString().ToLower()}|recording:{isRecording.ToString().ToLower()}";
         }
-        
-        /// <summary>
-        /// Đọc file video và trả về bytes
-        /// Return: byte[] hoặc null
-        /// </summary>
+
         public byte[] GetVideoBytes(string filename)
         {
             try
             {
                 string filePath = Path.Combine(outputFolder, filename);
-                
-                if (File.Exists(filePath))
-                {
-                    return File.ReadAllBytes(filePath);
-                }
-                
+                if (File.Exists(filePath)) return File.ReadAllBytes(filePath);
                 return null;
             }
-            catch
-            {
-                return null;
-            }
+            catch { return null; }
         }
-        
-        /// <summary>
-        /// Xóa tất cả file video trong thư mục
-        /// Return: "CLEARED"
-        /// </summary>
+
         public string ClearAllRecordings()
         {
             try
@@ -326,31 +253,11 @@ namespace WebcamRecorder
                 if (Directory.Exists(outputFolder))
                 {
                     string[] files = Directory.GetFiles(outputFolder, "*.avi");
-                    foreach (string file in files)
-                    {
-                        try
-                        {
-                            File.Delete(file);
-                        }
-                        catch { }
-                    }
+                    foreach (string file in files) try { File.Delete(file); } catch { }
                 }
-                
                 return "CLEARED";
             }
-            catch (Exception ex)
-            {
-                return "ERROR: " + ex.Message;
-            }
-        }
-        
-        /// <summary>
-        /// Cleanup resources
-        /// </summary>
-        public void Dispose()
-        {
-            TurnOff();
-            currentFrame?.Dispose();
+            catch (Exception ex) { return "ERROR: " + ex.Message; }
         }
     }
 }

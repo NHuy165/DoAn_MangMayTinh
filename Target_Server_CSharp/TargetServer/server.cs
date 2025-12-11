@@ -405,6 +405,13 @@ namespace ServerApp
                 
                 switch (cmd)
                 {
+
+                    case "WEBCAM":
+                        // Nếu nhận được lệnh "WEBCAM" khi đang ở trong vòng lặp này,
+                        // nghĩa là Client gửi kèm định danh module. 
+                        // Ta chỉ cần bỏ qua để vòng lặp đọc lệnh tiếp theo (VD: GET_FRAME).
+                        break;
+
                     case "ON": // Bật camera (chỉ preview, chưa ghi)
                         {
                             string result = webcamCapture.TurnOn();
