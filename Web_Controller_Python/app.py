@@ -130,39 +130,68 @@ def send_command_to_server(command_type, sub_command=None, args=None, file_conte
             writer.write("QUIT\n")
             writer.flush()
 
-        # --- NHÓM FILE EXPLORER (NÂNG CẤP) ---
+        # === NHÓM 3: FILE MANAGER (CẬP NHẬT GIAO THỨC) ===
         elif command_type == "FILE":
+            
+            # 1. Gửi Header "FILE" trước để vào case FILE bên Server
+            writer.write("FILE\n")
+            # (Lưu ý: chưa flush vội, để gửi dồn lệnh con đi luôn cho nhanh)
+
             if sub_command == "GET_FILES":
-                writer.write("GET_FILES\n")
-                # Gửi đường dẫn (nếu không có thì gửi ROOT)
+                writer.write("GET_FILES\n") # Lệnh con
+                
+                # args là đường dẫn (nếu rỗng thì gửi ROOT)
                 path = args if args else "ROOT"
                 writer.write(f"{path}\n")
                 writer.flush()
                 
+                # Đọc danh sách trả về
                 count_str = reader.readline().strip()
                 if count_str.isdigit():
                     count = int(count_str)
                     file_list = []
                     for _ in range(count):
-                        # Đọc format: [TYPE]|NAME|SIZE
                         raw = reader.readline().strip()
                         parts = raw.split('|')
                         if len(parts) >= 3:
                             file_list.append({"type": parts[0], "name": parts[1], "size": parts[2]})
                     response_data = file_list
                     status = "success"
-                else: msg = "Lỗi đọc danh sách"
+                else: msg = "Lỗi đọc danh sách: " + count_str
 
             elif sub_command == "DELETE":
                 writer.write("DELETE_FILE\n")
-                writer.write(f"{args}\n") # Gửi đường dẫn cần xóa
+                writer.write(f"{args}\n")
                 writer.flush()
                 msg = reader.readline().strip()
                 status = "success"
 
+            elif sub_command == "UPLOAD":
+                writer.write("UPLOAD_FILE\n")
+                writer.write(f"{args}\n") # args là đường dẫn lưu file
+                
+                # Logic gửi file chia nhỏ (Chunking)
+                if file_content:
+                    length = len(file_content)
+                    writer.write(f"{length}\n") # Gửi kích thước
+                    writer.flush()
+                    
+                    chunk_size = 4096
+                    for i in range(0, length, chunk_size):
+                        chunk = file_content[i:i+chunk_size]
+                        writer.write(chunk)
+                    writer.flush()
+                    
+                    msg = reader.readline().strip()
+                    status = "success" if "thành công" in msg else "error"
+                else:
+                    writer.write("0\n")
+                    writer.flush()
+                    msg = "Lỗi: File rỗng"
+
             elif sub_command == "DOWNLOAD":
                 writer.write("DOWNLOAD_FILE\n")
-                writer.write(f"{args}\n") # Gửi đường dẫn file
+                writer.write(f"{args}\n")
                 writer.flush()
                 
                 size_str = reader.readline().strip()
@@ -172,9 +201,9 @@ def send_command_to_server(command_type, sub_command=None, args=None, file_conte
                         response_data = base64.b64encode(f_data).decode('utf-8')
                         status = "success"
                     else: msg = "Lỗi tải dữ liệu"
-                else: msg = "File không tồn tại hoặc rỗng"
+                else: msg = "File không tồn tại"
 
-            writer.write("QUIT\n")
+            writer.write("QUIT\n") # Thoát khỏi case FILE bên Server (để vòng lặp while quay lại từ đầu)
             writer.flush()
 
     except Exception as e:

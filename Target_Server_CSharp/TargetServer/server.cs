@@ -140,11 +140,12 @@ namespace ServerApp
                         break;
 
                     // --- NHÓM 3: FILE MANAGER (GOM VÀO 1 HÀM) ---
-                    case "GET_FILES":
-                    case "DELETE_FILE":
-                    case "UPLOAD_FILE":
-                    case "DOWNLOAD_FILE":
-                        FileHandler(s); // Truyền lệnh con vào xử lý
+                    case "FILE":
+                        // Client gửi "FILE" -> Server vào đây -> Đọc tiếp "GET_FILES"
+                        string subCommand = Program.nr.ReadLine();
+
+                        // 2. Truyền lệnh con vào hàm xử lý
+                        FileHandler(subCommand);
                         break;
 
                     case "QUIT": return;
@@ -552,9 +553,9 @@ namespace ServerApp
             {
                 switch (command)
                 {
-                    // 1. LẤY DANH SÁCH FILE/THƯ MỤC
+                    // --- 1. XEM DANH SÁCH FILE/THƯ MỤC ---
                     case "GET_FILES":
-                        string path = Program.nr.ReadLine();
+                        string path = Program.nr.ReadLine(); // Đọc đường dẫn
                         List<string> items = new List<string>();
 
                         if (string.IsNullOrEmpty(path) || path == "ROOT")
@@ -581,7 +582,7 @@ namespace ServerApp
                         foreach (string item in items) { Program.nw.WriteLine(item); Program.nw.Flush(); }
                         break;
 
-                    // 2. XÓA FILE
+                    // --- 2. XÓA FILE/FOLDER ---
                     case "DELETE_FILE":
                         string targetPath = Program.nr.ReadLine();
                         if (File.Exists(targetPath))
@@ -595,9 +596,10 @@ namespace ServerApp
                             Program.nw.WriteLine("Đã xóa thư mục.");
                         }
                         else Program.nw.WriteLine("Đường dẫn không tồn tại.");
+                        Program.nw.Flush();
                         break;
 
-                    // 3. TẢI FILE VỀ MÁY (DOWNLOAD)
+                    // --- 3. DOWNLOAD (Tải về Client) ---
                     case "DOWNLOAD_FILE":
                         string downPath = Program.nr.ReadLine();
                         if (File.Exists(downPath))
@@ -607,23 +609,24 @@ namespace ServerApp
                             Program.nw.Flush();
                             Program.client.SendFile(downPath);
                         }
-                        else Program.nw.WriteLine("0");
+                        else { Program.nw.WriteLine("0"); Program.nw.Flush(); }
                         break;
 
-                    // 4. UPLOAD FILE LÊN SERVER (CHUNKING)
+                    // --- 4. UPLOAD (Nhận từ Client) - Sử dụng Chunking an toàn ---
                     case "UPLOAD_FILE":
                         string savePath = "";
-                        // Vét sạch dòng trống (Ghost Newlines)
+                        // Vét sạch dòng trống để tránh lỗi "Ghost Newline"
                         while (string.IsNullOrWhiteSpace(savePath))
                         {
                             if (Program.nr.Peek() == -1) break;
                             savePath = Program.nr.ReadLine();
                         }
-                        string sizeStr = Program.nr.ReadLine();
+                        string sizeStr = Program.nr.ReadLine(); // Đọc kích thước
 
                         long dataSize;
                         if (!string.IsNullOrEmpty(savePath) && long.TryParse(sizeStr, out dataSize))
                         {
+                            // Đọc dữ liệu theo từng khối (Chunk)
                             StringBuilder b64Builder = new StringBuilder((int)dataSize);
                             char[] buffer = new char[4096];
                             long totalRead = 0;
@@ -645,20 +648,22 @@ namespace ServerApp
                                     File.WriteAllBytes(savePath, fileBytes);
                                     Program.nw.WriteLine("Upload thành công!");
                                 }
-                                catch { Program.nw.WriteLine("Lỗi: File hỏng."); }
+                                catch { Program.nw.WriteLine("Lỗi: File hỏng (Base64 sai)."); }
                             }
                             else Program.nw.WriteLine($"Lỗi: Mới nhận {totalRead}/{dataSize} bytes.");
                         }
-                        else Program.nw.WriteLine("Lỗi: Header sai.");
+                        else Program.nw.WriteLine("Lỗi: Header không hợp lệ.");
+
+                        Program.nw.Flush();
                         break;
                 }
             }
             catch (Exception ex)
             {
-                // Gửi thông báo lỗi chung nếu có ngoại lệ
+                // Gửi lỗi về Client nếu có sự cố bất ngờ
                 Program.nw.WriteLine("Lỗi Server: " + ex.Message);
+                Program.nw.Flush();
             }
-            Program.nw.Flush();
         }
     }
 }
