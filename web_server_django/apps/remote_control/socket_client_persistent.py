@@ -264,7 +264,7 @@ class PersistentRemoteClient:
         if not self.connected: return None
         
         # Nếu đang bận gửi lệnh khác (ví dụ Start Rec), bỏ qua frame này để tránh treo
-        if not self._lock.acquire(blocking=False):
+        if not self._lock.acquire(timeout=0.5):
             return None
             
         try:
@@ -309,7 +309,7 @@ class PersistentRemoteClient:
                 self._send_str("WEBCAM")
                 self._send_str("STOP_REC")
                 
-                # Format trả về: "RECORDING_STOPPED|filename|filesize"
+                # Format trả về từ C#: "RECORDING_STOPPED|filename|filesize|duration"
                 response = self._recv_line()
                 
                 if not response.startswith("RECORDING_STOPPED"):
@@ -319,7 +319,13 @@ class PersistentRemoteClient:
                 parts = response.split('|')
                 filename = parts[1] if len(parts) > 1 else "video.avi"
                 
-                # Server gửi tiếp 1 dòng chứa size thật của file
+                # --- LOGIC MỚI: LẤY DURATION ---
+                duration = 0
+                if len(parts) > 3 and parts[3].isdigit():
+                    duration = int(parts[3])
+                # -------------------------------
+
+                # Server gửi tiếp 1 dòng chứa size thật của file (để check protocol)
                 size_check = self._recv_line()
                 if not size_check.isdigit():
                     self._send_str("QUIT")
@@ -327,7 +333,7 @@ class PersistentRemoteClient:
                 
                 real_size = int(size_check)
                 if real_size > 0:
-                    # ĐỌC FILE VIDEO (BINARY) - Đây là chỗ hay gây lỗi UTF-8 nhất
+                    # ĐỌC FILE VIDEO (BINARY)
                     video_data = self._recv_bytes(real_size)
                 else:
                     video_data = b''
@@ -339,11 +345,12 @@ class PersistentRemoteClient:
                     "message": "Saved", 
                     "filename": filename, 
                     "file_size": real_size, 
-                    "video_data": video_data
+                    "video_data": video_data,
+                    "duration": duration # Trả về duration cho views.py dùng
                 }
             except Exception as e:
                 return {"success": False, "message": str(e)}
-
+            
     def webcam_status(self):
         if not self.connected: return {"camera_on": False, "recording": False}
         with self._lock:

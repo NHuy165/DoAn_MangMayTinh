@@ -12,7 +12,6 @@ namespace WebcamRecorder
 {
     public class WebcamCapture
     {
-        // Thư mục lưu video tạm
         public static string outputFolder = Path.Combine(Path.GetTempPath(), "webcam_recordings");
         public static string currentVideoPath = "";
 
@@ -20,20 +19,21 @@ namespace WebcamRecorder
         private VideoFileWriter videoWriter;
         private Bitmap currentFrame;
 
-        // --- CÁC BIẾN KHÓA (LOCK) ĐỂ TRÁNH XUNG ĐỘT ---
-        private object frameLock = new object();      // Khóa khi truy cập ảnh hiện tại
-        private object videoWriteLock = new object(); // Khóa riêng cho việc ghi video
+        // Locks
+        private object frameLock = new object();
+        private object videoWriteLock = new object();
 
         private volatile bool isRecording = false;
         private bool isCameraOn = false;
 
-        // --- BIẾN LƯU KÍCH THƯỚC THẬT CỦA CAMERA ---
-        // Quan trọng: Phải lưu lại kích thước thật để tạo video đúng kích thước đó
+        // Video Specs
         private int actualWidth = 640;
         private int actualHeight = 480;
+        private const int TARGET_FPS = 25;
+        private const int VIDEO_BITRATE = 1000000;
 
-        private const int TARGET_FPS = 25;     // 25 FPS là chuẩn an toàn cho webcam
-        private const int VIDEO_BITRATE = 1000000; // 1 Mbps (Đủ nét, file nhẹ, không lag mạng)
+        // --- MỚI: Biến lưu thời gian bắt đầu ---
+        private DateTime recordingStartTime;
 
         public WebcamCapture()
         {
@@ -51,17 +51,12 @@ namespace WebcamRecorder
 
                 videoSource = new VideoCaptureDevice(videoDevices[0].MonikerString);
 
-                // --- TỰ ĐỘNG CHỌN ĐỘ PHÂN GIẢI PHÙ HỢP ---
-                // Ưu tiên chọn độ phân giải gần 640x480 nhất để nhẹ mạng LAN
                 if (videoSource.VideoCapabilities.Length > 0)
                 {
                     var capability = videoSource.VideoCapabilities
                         .OrderBy(c => Math.Abs(c.FrameSize.Width - 640))
                         .First();
-
                     videoSource.VideoResolution = capability;
-
-                    // CẬP NHẬT KÍCH THƯỚC THẬT VÀO BIẾN
                     actualWidth = capability.FrameSize.Width;
                     actualHeight = capability.FrameSize.Height;
                 }
@@ -83,7 +78,6 @@ namespace WebcamRecorder
                 if (videoSource != null && videoSource.IsRunning)
                 {
                     videoSource.SignalToStop();
-                    // Đợi tối đa 1 giây để camera tắt hẳn
                     for (int i = 0; i < 10; i++)
                     {
                         if (!videoSource.IsRunning) break;
@@ -110,21 +104,15 @@ namespace WebcamRecorder
             try
             {
                 Bitmap videoFrame = null;
-
-                // 1. Clone frame để hiển thị (giữ lock cực nhanh)
                 lock (frameLock)
                 {
                     if (currentFrame != null) currentFrame.Dispose();
                     currentFrame = (Bitmap)eventArgs.Frame.Clone();
-
-                    // Nếu đang ghi hình, clone thêm 1 bản để ghi
                     if (isRecording) videoFrame = (Bitmap)eventArgs.Frame.Clone();
                 }
 
-                // 2. Ghi video (Thực hiện ngoài lock frame để không chặn streaming)
                 if (videoFrame != null)
                 {
-                    // Kiểm tra an toàn: Nếu kích thước ảnh bị đổi đột ngột thì bỏ qua để tránh Crash
                     if (videoFrame.Width != actualWidth || videoFrame.Height != actualHeight)
                     {
                         videoFrame.Dispose();
@@ -171,24 +159,20 @@ namespace WebcamRecorder
                 string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 currentVideoPath = Path.Combine(outputFolder, $"webcam_{timestamp}.avi");
 
-                // --- KHỞI TẠO VIDEO WRITER VỚI KÍCH THƯỚC THẬT ---
                 lock (videoWriteLock)
                 {
                     videoWriter = new VideoFileWriter();
-
-                    // QUAN TRỌNG NHẤT:
-                    // Sử dụng actualWidth và actualHeight đã lấy từ lúc TurnOn()
-                    // Điều này đảm bảo kích thước file video KHỚP 100% với kích thước Camera
-                    // => KHÔNG BAO GIỜ BỊ TREO (HANG)
                     videoWriter.Open(currentVideoPath, actualWidth, actualHeight, TARGET_FPS, VideoCodec.MPEG4, VIDEO_BITRATE);
                 }
 
                 isRecording = true;
+                // --- MỚI: Ghi nhận thời gian bắt đầu ---
+                recordingStartTime = DateTime.Now;
+
                 return "RECORDING_STARTED";
             }
             catch (Exception ex)
             {
-                // Reset nếu lỗi
                 isRecording = false;
                 lock (videoWriteLock)
                 {
@@ -205,8 +189,6 @@ namespace WebcamRecorder
                 if (!isRecording) return "ERROR: Not recording";
 
                 isRecording = false;
-
-                // Đợi 0.5s để frame cuối cùng được ghi xong
                 Thread.Sleep(500);
 
                 lock (videoWriteLock)
@@ -219,17 +201,23 @@ namespace WebcamRecorder
                     }
                 }
 
+                // --- MỚI: Tính toán thời gian duration (giây) ---
+                int durationSeconds = (int)(DateTime.Now - recordingStartTime).TotalSeconds;
+                // ------------------------------------------------
+
                 if (File.Exists(currentVideoPath))
                 {
                     long fileSize = new FileInfo(currentVideoPath).Length;
-                    return $"RECORDING_STOPPED|{Path.GetFileName(currentVideoPath)}|{fileSize}";
+                    // Format trả về mới: thêm duration ở cuối
+                    return $"RECORDING_STOPPED|{Path.GetFileName(currentVideoPath)}|{fileSize}|{durationSeconds}";
                 }
 
-                return "RECORDING_STOPPED||0";
+                return "RECORDING_STOPPED||0|0";
             }
             catch (Exception ex) { return "ERROR: " + ex.Message; }
         }
 
+        // ... Các hàm GetStatus, GetVideoBytes, ClearAllRecordings giữ nguyên ...
         public string GetStatus()
         {
             return $"camera_on:{isCameraOn.ToString().ToLower()}|recording:{isRecording.ToString().ToLower()}";
