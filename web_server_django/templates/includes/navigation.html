@@ -42,26 +42,28 @@
             </div>
           </form> -->
           
-          <!-- Server Selection -->
-          <div class="hidden lg:flex lg:items-center lg:ml-4 lg:space-x-2">
-            <div class="relative">
+          <!-- Server Selection: Always visible, responsive -->
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center ml-0 sm:ml-4 space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto mt-3 sm:mt-0">
+            <div class="relative w-full sm:w-auto">
               <select id="server-select"
-                class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary-500 focus:border-primary-500 block w-64 p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-primary-500 dark:focus:border-primary-500">
+                class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary-500 focus:border-primary-500 block w-full sm:w-64 p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-primary-500 dark:focus:border-primary-500">
                 <option value="" disabled selected>Select Server</option>
               </select>
             </div>
-            <button type="button" id="connect-server-btn"
-              class="text-white bg-primary-700 hover:bg-primary-800 focus:ring-4 focus:ring-primary-300 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-primary-600 dark:hover:bg-primary-700 focus:outline-none dark:focus:ring-primary-800">
-              Connect
-            </button>
-            <button type="button" id="disconnect-server-btn"
-              class="hidden text-white bg-red-600 hover:bg-red-700 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-red-500 dark:hover:bg-red-600 focus:outline-none dark:focus:ring-red-800">
-              Disconnect
-            </button>
-            <button type="button" id="discover-servers-btn"
-              class="text-gray-900 bg-white border border-gray-300 hover:bg-gray-100 focus:ring-4 focus:ring-gray-200 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:bg-gray-700 dark:hover:border-gray-600 dark:focus:ring-gray-700">
-              Discover
-            </button>
+            <div class="flex flex-row space-x-2 w-full sm:w-auto">
+              <button type="button" id="connect-server-btn"
+                class="flex-1 sm:flex-none text-white bg-primary-700 hover:bg-primary-800 focus:ring-4 focus:ring-primary-300 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-primary-600 dark:hover:bg-primary-700 focus:outline-none dark:focus:ring-primary-800">
+                Connect
+              </button>
+              <button type="button" id="disconnect-server-btn"
+                class="flex-1 sm:flex-none hidden text-white bg-red-600 hover:bg-red-700 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-red-500 dark:hover:bg-red-600 focus:outline-none dark:focus:ring-red-800">
+                Disconnect
+              </button>
+              <button type="button" id="discover-servers-btn"
+                class="flex-1 sm:flex-none text-gray-900 bg-white border border-gray-300 hover:bg-gray-100 focus:ring-4 focus:ring-gray-200 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:bg-gray-700 dark:hover:border-gray-600 dark:focus:ring-gray-700">
+                Discover
+              </button>
+            </div>
           </div>
         </div>
         <div class="flex items-center">
@@ -406,6 +408,22 @@
       </div>
     </div>
 </nav>
+<!-- Add this style to ensure content is not hidden under the navigation bar -->
+<style>
+  /* Adjust this value if nav height changes significantly */
+  .content-with-nav {
+    padding-top: 4.5rem; /* Default nav height, increase if nav gets taller on mobile */
+  }
+  @media (max-width: 640px) {
+    .content-with-nav {
+      padding-top: 7.5rem; /* More space for taller nav on mobile */
+    }
+  }
+</style>
+<!--
+  Để tránh nav che mất nội dung, hãy thêm class "content-with-nav" vào thẻ div bao ngoài phần content chính của mỗi page, ví dụ:
+  <div class="content-with-nav"> ... </div>
+-->
 
 <script>
   // Server discovery and connection functionality

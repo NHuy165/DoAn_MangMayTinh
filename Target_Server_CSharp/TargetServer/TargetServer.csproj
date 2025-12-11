@@ -32,8 +32,6 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
-<<<<<<< HEAD
-=======
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
     <DebugSymbols>true</DebugSymbols>
     <OutputPath>bin\x64\Debug\</OutputPath>
@@ -57,7 +55,6 @@
   <PropertyGroup>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
->>>>>>> a5e432f (Fixed issues with screenshots)
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -104,11 +101,8 @@
     <EmbeddedResource Include="server.resx">
       <DependentUpon>server.cs</DependentUpon>
     </EmbeddedResource>
-<<<<<<< HEAD
-=======
     <None Include="app.manifest" />
     <None Include="packages.config" />
->>>>>>> a5e432f (Fixed issues with screenshots)
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>

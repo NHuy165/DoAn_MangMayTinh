@@ -209,7 +209,7 @@ namespace ServerApp
 
                         // Gửi qua mạng về Client để lưu vào Django database
                         MemoryStream ms = new MemoryStream();
-                        bmp.Save(ms, ImageFormat.Bmp);
+                        bmp.Save(ms, ImageFormat.Png);  // Đổi từ BMP sang PNG để file nhỏ hơn
                         byte[] b = ms.ToArray();
                         Program.nw.WriteLine(b.Length.ToString());
                         Program.nw.Flush();

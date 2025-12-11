@@ -47,7 +47,7 @@
                     </div>
                     
                     <!-- Screenshot Image -->
-                    <img id="screenshotImage" src="" alt="Screenshot" class="hidden max-w-full h-auto">
+                    <img id="screenshotImage" src="" alt="Screenshot" class="hidden w-auto h-auto max-w-screen max-h-screen object-contain border border-gray-300 rounded">
                 </div>
                 
                 <!-- Tip Message -->
@@ -82,7 +82,7 @@
         loadingState.classList.add('hidden');
 
         if (res.status === 'success' && res.data) {
-            // Show screenshot
+            // Show screenshot - PNG format từ C# server
             img.src = "data:image/png;base64," + res.data;
             img.classList.remove('hidden');
             tipMessage.classList.remove('hidden');
