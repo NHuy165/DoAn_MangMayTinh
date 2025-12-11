@@ -642,6 +642,15 @@
     // Disconnect from server
     if (disconnectBtn) {
       disconnectBtn.addEventListener('click', async function() {
+        
+        // Kiểm tra xem đang ở trang webcam không và gọi hàm dọn dẹp
+        if (typeof window.performWebcamCleanup === 'function') {
+            window.performWebcamCleanup();
+            
+            // Đợi 1 tí xíu (100ms) cho giao diện kịp tắt trước khi ngắt mạng
+            await new Promise(r => setTimeout(r, 100));
+        }
+        
         disconnectBtn.disabled = true;
         disconnectBtn.textContent = 'Disconnecting...';
         

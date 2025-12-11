@@ -125,6 +125,21 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // ==================== STATE VARIABLES ====================
   let isCameraOn = false;
+
+  window.performWebcamCleanup = function() {
+        if (isCameraOn) {
+            console.log("Disconnect detected -> Stopping Webcam UI...");
+            
+            // 1. Quan trọng nhất: Ngắt vòng lặp lấy ảnh ngay lập tức
+            isCameraOn = false; 
+
+            // 2. Gọi hàm tắt camera có sẵn của bạn để reset giao diện
+            if (typeof turnOffCamera === 'function') {
+                turnOffCamera(); 
+            }
+        }
+  };
+
   let isRecording = false;
   let streamInterval = null;
   let durationInterval = null;
