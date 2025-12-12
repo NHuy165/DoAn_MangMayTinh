@@ -1,0 +1,205 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} Remote Terminal {% endblock %}
+
+{% block content %}
+<div class="px-4 pt-6">
+    <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm dark:border-gray-700 sm:p-6 dark:bg-gray-800">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-xl font-bold text-gray-900 dark:text-white">Remote Command Prompt</h3>
+            <span id="status-badge" class="px-3 py-1 text-xs font-medium text-red-800 bg-red-100 rounded-full dark:bg-red-900 dark:text-red-300 transition-all duration-300">
+                Disconnected
+            </span>
+        </div>
+
+        <div id="terminal-output" class="w-full h-96 p-4 mb-4 overflow-y-auto font-mono text-sm text-green-400 bg-black rounded-lg shadow-inner border border-gray-600">
+            <div class="mb-2">Microsoft Windows [Remote Shell]</div>
+            <div class="mb-4">(c) Microsoft Corporation. All rights reserved.</div>
+            <div id="history"></div>
+        </div>
+
+        <form id="cmd-form" class="relative" onsubmit="return false;">
+            <div class="flex items-center">
+                <span id="prompt-label" class="absolute left-3 text-gray-500 font-mono font-bold transition-all duration-200 opacity-0"></span>
+                
+                <input type="text" id="cmd-input" 
+                    class="block w-full p-2.5 pl-4 text-sm text-gray-900 bg-gray-50 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500 font-mono transition-all duration-200" 
+                    placeholder="Waiting for connection..." autocomplete="off" disabled required>
+                <button type="submit" id="btn-submit" disabled
+                    class="inline-flex items-center px-4 py-2 ml-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 transition-all duration-200 opacity-50 cursor-not-allowed">
+                    Run
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const terminalOutput = document.getElementById('terminal-output');
+        const historyDiv = document.getElementById('history');
+        const cmdForm = document.getElementById('cmd-form');
+        const cmdInput = document.getElementById('cmd-input');
+        const promptLabel = document.getElementById('prompt-label');
+        const btnSubmit = document.getElementById('btn-submit');
+        const statusBadge = document.getElementById('status-badge');
+
+        let currentPath = "";
+        let isConnectedStr = "false"; // Dùng string để so sánh tránh lỗi type
+
+        // --- CÁC HÀM CẬP NHẬT GIAO DIỆN ---
+        function setUIConnected() {
+            if (isConnectedStr === "true") return; // Nếu đã connected rồi thì thôi, tránh nháy
+            isConnectedStr = "true";
+
+            statusBadge.className = "px-3 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full dark:bg-green-900 dark:text-green-300 transition-all duration-300";
+            statusBadge.textContent = "Connected";
+            
+            cmdInput.disabled = false;
+            cmdInput.placeholder = "Enter command...";
+            btnSubmit.disabled = false;
+            btnSubmit.classList.remove("opacity-50", "cursor-not-allowed");
+            promptLabel.classList.remove("opacity-0");
+            cmdInput.focus();
+        }
+
+        function setUIDisconnected() {
+            if (isConnectedStr === "false") return;
+            isConnectedStr = "false";
+
+            statusBadge.className = "px-3 py-1 text-xs font-medium text-red-800 bg-red-100 rounded-full dark:bg-red-900 dark:text-red-300 transition-all duration-300";
+            statusBadge.textContent = "Disconnected";
+
+            cmdInput.disabled = true;
+            cmdInput.placeholder = "Waiting for connection...";
+            btnSubmit.disabled = true;
+            btnSubmit.classList.add("opacity-50", "cursor-not-allowed");
+            promptLabel.classList.add("opacity-0");
+            currentPath = "";
+            updateInputPadding();
+        }
+
+        function updateInputPadding() {
+            if (!currentPath || isConnectedStr === "false") {
+                promptLabel.textContent = "";
+                cmdInput.style.paddingLeft = "15px";
+                return;
+            }
+            promptLabel.textContent = currentPath;
+            // Tính toán padding: độ dài chuỗi * 9px (ước lượng) + 25px
+            const padding = Math.max(30, currentPath.length * 9 + 25); 
+            cmdInput.style.paddingLeft = padding + "px";
+        }
+
+        function appendToTerminal(text, type = 'output') {
+            const div = document.createElement('div');
+            div.className = 'whitespace-pre-wrap mb-1';
+            
+            if (type === 'command') {
+                div.className += ' text-white font-bold mt-3';
+                // Nếu chưa có path (lần đầu) thì hiện dấu nhắc mặc định
+                const displayPrompt = currentPath || "Remote>";
+                div.textContent = `${displayPrompt} ${text}`;
+            } else if (type === 'error') {
+                div.className += ' text-red-500';
+                div.textContent = text;
+            } else {
+                div.textContent = text;
+            }
+            
+            historyDiv.appendChild(div);
+            terminalOutput.scrollTop = terminalOutput.scrollHeight;
+        }
+
+        // --- HÀM GỬI LỆNH CHÍNH ---
+        async function executeCommand(command, isSilent = false) {
+            if (!isSilent) {
+                // Chỉ khóa input khi người dùng nhập thủ công
+                appendToTerminal(command, 'command');
+                cmdInput.value = '';
+                cmdInput.disabled = true;
+                btnSubmit.disabled = true;
+            }
+
+            try {
+                const response = await fetch("/remote/api/shell/execute/", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command: command })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    // KẾT NỐI THÀNH CÔNG
+                    setUIConnected(); 
+
+                    let output = data.data || "";
+                    
+                    // --- TÁCH PROMPT TỪ OUTPUT ---
+                    if (output.includes('>')) {
+                        const lastNewLine = output.lastIndexOf('\n');
+                        let newPrompt = "";
+                        let contentToShow = "";
+
+                        if (lastNewLine !== -1) {
+                            contentToShow = output.substring(0, lastNewLine);
+                            newPrompt = output.substring(lastNewLine + 1).trim();
+                        } else {
+                            newPrompt = output.trim(); 
+                            contentToShow = "";
+                        }
+
+                        // CẬP NHẬT ĐƯỜNG DẪN MỚI NHẤT TỪ SERVER
+                        if(newPrompt.endsWith('>')) {
+                            currentPath = newPrompt;
+                            updateInputPadding();
+                        }
+                        
+                        if (contentToShow && !isSilent) appendToTerminal(contentToShow);
+                    } else {
+                        if (!isSilent) appendToTerminal(output);
+                    }
+
+                } else {
+                    // LỖI TỪ SERVER TRẢ VỀ (VD: Mất kết nối giữa chừng)
+                    if (isSilent) {
+                         // Nếu đang poll mà lỗi -> Mất kết nối
+                         setUIDisconnected();
+                    } else {
+                        appendToTerminal(data.message || "Unknown error", 'error');
+                    }
+                }
+            } catch (error) {
+                // LỖI MẠNG/API (VD: Chưa connect server nào)
+                setUIDisconnected();
+                if (!isSilent) appendToTerminal("Connection Error. Please connect to a server first.", 'error');
+            } finally {
+                // --- SỬA LỖI TREO INPUT ---
+                // Luôn mở khóa input nếu đó là lệnh nhập thủ công, bất kể thành công hay thất bại
+                if (!isSilent && isConnectedStr === "true") {
+                    cmdInput.disabled = false;
+                    btnSubmit.disabled = false;
+                    cmdInput.focus();
+                }
+            }
+        }
+
+        cmdForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const command = cmdInput.value.trim();
+            if (command) executeCommand(command);
+        });
+
+        // --- VÒNG LẶP POLLING (Cứ 3 giây kiểm tra 1 lần) ---
+        // Giúp tự động cập nhật trạng thái và đường dẫn mới nhất
+        setInterval(() => {
+            executeCommand("cd .", true); // Gọi im lặng
+        }, 3000); 
+
+        // Gọi ngay lần đầu tiên khi tải trang
+        executeCommand("cd .", true);
+    });
+</script>
+
+{% endblock content %}

