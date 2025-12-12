@@ -107,6 +107,8 @@ def webcam_page(request):
 def power_page(request):
     return render(request, 'remote_control/power.html')
 
+def shell_page(request):
+    return render(request, 'remote_control/shell.html')
 
 # ==================== UDP DISCOVERY API ====================
 
@@ -184,6 +186,9 @@ def connect_server(request):
         client = _get_client(request)
         
         if client and client.connected:
+            # Reset CMD ngay khi vừa kết nối
+            client.shell_reset()
+
             return JsonResponse({
                 "success": True,
                 "message": f"Connected to {server_ip}",
@@ -220,11 +225,14 @@ def disconnect_server(request):
         client = _get_client(request)
         if client and client.connected:
             try:
-                # Gửi lệnh tắt camera để đèn trên máy server tắt đi
                 client.webcam_off()
             except:
                 pass
 
+            try:
+                client.shell_reset()
+            except Exception as e:
+                logger.warning(f"Shell reset error: {e}")
 
         session_id = request.session.session_key
         
@@ -402,6 +410,36 @@ def power_action(request):
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)})
 
+# ==================== CMD APIs ====================
+@csrf_exempt
+@require_http_methods(["POST"])
+def execute_shell_command(request):
+    """API: Thực thi lệnh CMD trên server"""
+    client = _get_client(request)
+
+    if not client:
+        # Thay vì trả về 400 (gây log đỏ), ta trả về 200 kèm status đặc biệt.
+        # Frontend JS đã có logic xử lý `status: 'disconnected'` rồi.
+        return JsonResponse({
+            "status": "disconnected", 
+            "message": "Not connected to server"
+        }, status=200) # Trả về 200 OK để console không báo lỗi đỏ
+    
+    try:
+        data = json.loads(request.body)
+        cmd = data.get('command')
+        
+        if not cmd:
+            return JsonResponse({"status": "error", "message": "Command is empty"})
+
+        # Gửi lệnh qua socket
+        result = client.send_command("CMD", "EXEC", cmd)
+        
+        # result['data'] chứa output text từ server
+        return JsonResponse(result)
+        
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
 # ==================== WEBCAM APIs ====================
 

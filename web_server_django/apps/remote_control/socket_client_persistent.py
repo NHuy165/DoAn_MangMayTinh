@@ -214,6 +214,31 @@ class PersistentRemoteClient:
                         status = "success"
                     self._send_str("QUIT")
 
+                elif command_type == "CMD":
+                    if sub_command == "EXEC":
+                        self._send_str("EXEC")
+                        # Gửi câu lệnh thực tế (args = "dir", "ipconfig"...)
+                        self._send_str(str(args))
+                        
+                        # Đọc độ dài dữ liệu trả về
+                        size_str = self._recv_line()
+                        
+                        if size_str.isdigit():
+                            size = int(size_str)
+                            if size > 0:
+                                output_bytes = self._recv_bytes(size)
+                                response_data = output_bytes.decode('utf-8', errors='replace')
+                            else:
+                                response_data = "" 
+                            status = "success"  # <--- ĐÚNG: Chỉ success khi có size hợp lệ
+                        else:
+                            # Timeout hoặc Server không phản hồi đúng giao thức
+                            response_data = "Error: Server not responding (Timeout) or Protocol Mismatch."
+                            status = "error"    # <--- Báo lỗi rõ ràng
+                    
+                    # Luôn gửi QUIT để thoát vòng lặp case "CMD" bên C# để nhả lock
+                    self._send_str("QUIT")
+
                 elif command_type == "SHUTDOWN":
                     # Server C# sẽ tự shutdown máy
                     status = "success"
@@ -366,3 +391,14 @@ class PersistentRemoteClient:
                 return {"camera_on": is_on, "recording": is_rec}
             except: 
                 return {"camera_on": False, "recording": False}
+            
+    def shell_reset(self):
+        """Gửi lệnh reset đường dẫn CMD về mặc định"""
+        if not self.connected: return
+        with self._lock:
+            try:
+                self._send_str("CMD")   # Vào module CMD
+                self._send_str("RESET") # Gửi lệnh Reset biến toàn cục
+                # Không cần đợi phản hồi vì Server sẽ tự thoát ra ngay
+            except:
+                pass
