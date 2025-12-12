@@ -125,6 +125,12 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // ==================== STATE VARIABLES ====================
   let isCameraOn = false;
+  let isRecording = false;
+  let streamInterval = null;
+  let durationInterval = null;
+  let recordingStartTime = null;
+
+  // Utility function to help with auto camera turnoff
 
   window.performWebcamCleanup = function() {
         if (isCameraOn) {
@@ -139,11 +145,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
   };
-
-  let isRecording = false;
-  let streamInterval = null;
-  let durationInterval = null;
-  let recordingStartTime = null;
   
   // ==================== UTILITY FUNCTIONS ====================
   function getCookie(name) {
