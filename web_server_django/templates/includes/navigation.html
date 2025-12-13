@@ -642,6 +642,28 @@
     // Disconnect from server
     if (disconnectBtn) {
       disconnectBtn.addEventListener('click', async function() {
+        
+        // --- 1. GỌI HÀM DỌN DẸP GIAO DIỆN (CLEANUP UI) ---
+        // Mục đích: Tắt ngay các vòng lặp lấy ảnh (setInterval) để trình duyệt không gửi request nữa
+        
+        // Dọn dẹp Webcam (nếu đang ở trang Webcam)
+        if (typeof window.performWebcamCleanup === 'function') {
+          console.log("Cleaning up Webcam UI...");
+          window.performWebcamCleanup();
+        }
+
+        // Dọn dẹp Screen Recorder (nếu đang ở trang Screen)
+        if (typeof window.performScreenCleanup === 'function') {
+          console.log("Cleaning up Screen Recorder UI...");
+          window.performScreenCleanup();
+        }
+        // -------------------------------------------------
+
+        // --- 2. CHỜ 200ms ĐỂ UI KỊP DỪNG ---
+        // Đây là bước quan trọng nhất để trị bệnh "giật giật"
+        await new Promise(r => setTimeout(r, 200));
+        
+        // --- 3. TIẾN HÀNH NGẮT KẾT NỐI ---
         disconnectBtn.disabled = true;
         disconnectBtn.textContent = 'Disconnecting...';
         
@@ -662,18 +684,21 @@
             clearConnectionState();
             console.log('🔌 Disconnected');
             
-            // XÓA SẠCH sessionStorage (servers phải discover lại!)
+            // Xóa session storage
             sessionStorage.clear();
             availableServers = [];
             
-            // Reset UI
+            // Reset UI về trạng thái chưa kết nối
             serverSelect.innerHTML = '<option value="" disabled selected>Select Server</option>';
             
-            // Show connect button, hide disconnect button
+            // Hiện nút Connect, Ẩn nút Disconnect
             connectBtn.classList.remove('hidden', 'bg-green-600', 'hover:bg-green-700', 'dark:bg-green-500', 'dark:hover:bg-green-600');
             connectBtn.classList.add('bg-primary-700', 'hover:bg-primary-800', 'dark:bg-primary-600', 'dark:hover:bg-primary-700');
             connectBtn.textContent = 'Connect';
             disconnectBtn.classList.add('hidden');
+
+            // Chuyển hướng về trang chủ để reset toàn bộ (Optional nhưng Recommended)
+            // window.location.href = "/"; 
           } else {
             showNotification('error', data.message || 'Failed to disconnect');
           }
