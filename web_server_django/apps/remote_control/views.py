@@ -669,3 +669,108 @@ def webcam_delete(request, recording_id):
     except Exception as e:
         logger.error(f"Delete recording error: {str(e)}")
         return JsonResponse({"success": False, "message": str(e)}, status=500)
+    
+# ==================== FILE MANAGER SECTION ====================
+
+@require_http_methods(["GET"])
+def file_manager_page(request):
+    """
+    Render trang File Manager.
+    Logic: Kiểm tra nghiêm ngặt. Nếu chưa chọn Server hoặc Socket mất kết nối
+    thì báo về giao diện là chưa kết nối.
+    """
+    # 1. Lấy thông tin Server từ Session
+    server_ip = request.session.get('target_server_ip')
+    
+    # 2. Lấy đối tượng Client để kiểm tra kết nối thực tế
+    client = _get_client(request)
+    
+    # 3. Xác định trạng thái: Phải có IP VÀ Client phải đang connected
+    is_connected = False
+    if server_ip and client and client.connected:
+        is_connected = True
+        
+    context = {
+        'is_connected': is_connected,
+        'server_ip': server_ip if server_ip else "Unknown"
+    }
+    return render(request, 'remote_control/file_manager.html', context)
+
+
+# --- CÁC API BÊN DƯỚI DÙNG ĐỂ JAVASCRIPT GỌI ---
+
+@csrf_exempt
+def file_get_drives(request):
+    """API: Lấy danh sách ổ đĩa"""
+    client = _get_client(request)
+    # Chặn ngay nếu không có kết nối
+    if not client or not client.connected: 
+        return JsonResponse({"success": False, "message": "Not connected to server"}, status=400)
+    
+    try:
+        result = client.file_get_drives()
+        return JsonResponse(result)
+    except Exception as e:
+        return JsonResponse({"success": False, "message": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def file_get_dir(request):
+    """API: Lấy danh sách file trong thư mục"""
+    client = _get_client(request)
+    if not client or not client.connected: 
+        return JsonResponse({"success": False, "message": "Not connected"}, status=400)
+    
+    try:
+        data = json.loads(request.body)
+        path = data.get('path', '')
+        result = client.file_get_directory(path)
+        return JsonResponse(result)
+    except Exception as e:
+        return JsonResponse({"success": False, "message": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def file_delete(request):
+    """API: Xóa file/folder"""
+    client = _get_client(request)
+    if not client or not client.connected: 
+        return JsonResponse({"success": False, "message": "Not connected"}, status=400)
+    
+    try:
+        data = json.loads(request.body)
+        path = data.get('path')
+        result = client.file_delete_item(path)
+        return JsonResponse(result)
+    except Exception as e:
+        return JsonResponse({"success": False, "message": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def file_download(request):
+    """API: Tải file về"""
+    client = _get_client(request)
+    if not client or not client.connected: 
+        return JsonResponse({"success": False, "message": "Not connected"}, status=400)
+    
+    try:
+        data = json.loads(request.body)
+        path = data.get('path')
+        
+        result = client.file_download(path)
+        
+        if result.get('success'):
+            response = HttpResponse(
+                result['data'], 
+                content_type='application/octet-stream'
+            )
+            response['Content-Disposition'] = f'attachment; filename="{result["filename"]}"'
+            return response
+        else:
+            return JsonResponse(result, status=404)
+            
+    except Exception as e:
+        return JsonResponse({"success": False, "message": str(e)}, status=500)

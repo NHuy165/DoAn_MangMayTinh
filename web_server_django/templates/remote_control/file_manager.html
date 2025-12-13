@@ -1,0 +1,202 @@
+{% extends "layouts/base.html" %} 
+{% block title %} File Manager {% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center py-4">
+  <div class="d-block mb-4 mb-md-0">
+    <h2 class="h4">Remote File Manager</h2>
+    <p class="mb-0">Quản lý tệp tin trên máy trạm.</p>
+  </div>
+  <div class="btn-toolbar mb-2 mb-md-0">
+      <a href="{% url 'index' %}" class="btn btn-sm btn-gray-800 d-inline-flex align-items-center">
+          ⬅ Quay về Dashboard
+      </a>
+  </div>
+</div>
+
+{% if is_connected %}
+    
+    <div class="alert alert-success shadow-sm mb-3">
+        <i class="fas fa-link"></i> Đang kết nối tới: <strong>{{ server_ip }}</strong>
+    </div>
+
+    <div class="card card-body border-0 shadow table-wrapper table-responsive mb-4">
+      <h5 class="mb-3">Danh sách ổ đĩa</h5>
+      <div id="drives-container" class="d-flex gap-2">
+        <button class="btn btn-sm btn-secondary" disabled>Loading...</button>
+      </div>
+    </div>
+
+    <div class="card card-body border-0 shadow table-wrapper table-responsive">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 id="current-path-label" class="mb-0">Path: ...</h5>
+        <button onclick="goUp()" class="btn btn-sm btn-secondary">⬆ Up Level</button>
+      </div>
+
+      <table class="table table-hover">
+        <thead>
+          <tr>
+            <th class="border-gray-200">Loại</th>
+            <th class="border-gray-200">Tên</th>
+            <th class="border-gray-200">Kích thước</th>
+            <th class="border-gray-200">Hành động</th>
+          </tr>
+        </thead>
+        <tbody id="file-list-body">
+          <tr>
+            <td colspan="4" class="text-center text-muted">Vui lòng chọn ổ đĩa để bắt đầu.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+{% else %}
+
+    <div class="alert alert-danger shadow-sm py-4 text-center" role="alert">
+        <h4 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> LỖI KẾT NỐI</h4>
+        <p>Bạn chưa chọn máy Server hoặc kết nối đã bị mất.</p>
+        <hr>
+        <a href="{% url 'index' %}" class="btn btn-danger">Quay về chọn máy Server</a>
+    </div>
+
+{% endif %}
+
+{% csrf_token %}
+
+<script>
+  let currentPath = "";
+
+  // Chỉ chạy code JS nếu Python xác nhận đã kết nối
+  {% if is_connected %}
+      document.addEventListener("DOMContentLoaded", function () {
+        loadDrives();
+      });
+  {% endif %}
+
+  function loadDrives() {
+    fetch("/remote/api/file/drives/")
+      .then((response) => response.json())
+      .then((data) => {
+        const container = document.getElementById("drives-container");
+        container.innerHTML = "";
+        
+        if (data.success && data.drives) {
+          data.drives.forEach((drive) => {
+            const btn = document.createElement("button");
+            btn.className = "btn btn-outline-primary me-2";
+            btn.innerHTML = `<i class="fas fa-hdd"></i> ${drive.path} (${drive.info})`;
+            btn.onclick = () => loadDirectory(drive.path);
+            container.appendChild(btn);
+          });
+        } else {
+          container.innerHTML = `<span class="text-danger">${data.message || "Error"}</span>`;
+        }
+      })
+      .catch(err => console.error(err));
+  }
+
+  function loadDirectory(path) {
+    currentPath = path;
+    document.getElementById("current-path-label").innerText = "Path: " + path;
+    document.getElementById("file-list-body").innerHTML = '<tr><td colspan="4" class="text-center">Loading...</td></tr>';
+
+    fetch("/remote/api/file/list/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value,
+      },
+      body: JSON.stringify({ path: path }),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        const tbody = document.getElementById("file-list-body");
+        tbody.innerHTML = "";
+
+        if (data.success && data.items) {
+          if (data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Thư mục trống</td></tr>';
+            return;
+          }
+
+          data.items.forEach((item) => {
+            const tr = document.createElement("tr");
+            let icon = item.type === "DIR" ? "📁" : "📄";
+            let safePath = currentPath.replace(/\\/g,"\\\\") + "\\\\" + item.name;
+            
+            let nameHtml = item.type === "DIR"
+                ? `<a href="#" onclick="loadDirectory('${safePath}'); return false;" class="fw-bold text-decoration-none">${item.name}</a>`
+                : item.name;
+
+            let safeName = item.name.replace(/'/g, "\\'"); 
+            let actionBtn = "";
+            if (item.type === "FILE") {
+              actionBtn = `<button class="btn btn-xs btn-success me-1" onclick="downloadFile('${safeName}')">⬇</button>`;
+            }
+            actionBtn += `<button class="btn btn-xs btn-danger" onclick="deleteItem('${safeName}')">🗑</button>`;
+
+            tr.innerHTML = `<td>${icon}</td><td>${nameHtml}</td><td>${item.size}</td><td>${actionBtn}</td>`;
+            tbody.appendChild(tr);
+          });
+        } else {
+          tbody.innerHTML = `<tr><td colspan="4" class="text-danger">${data.message}</td></tr>`;
+        }
+      });
+  }
+
+  function goUp() {
+    if (!currentPath || currentPath.length <= 3) return;
+    let parts = currentPath.split("\\");
+    parts.pop(); 
+    if (parts.length === 1 && parts[0].includes(":")) parts[0] += "\\";
+    loadDirectory(parts.join("\\"));
+  }
+
+  function downloadFile(filename) {
+    const fullPath = currentPath + "\\" + filename;
+    fetch("/remote/api/file/download/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value,
+      },
+      body: JSON.stringify({ path: fullPath }),
+    })
+      .then((response) => {
+        if (response.ok) return response.blob();
+        throw new Error("Download failed");
+      })
+      .then((blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.style.display = "none";
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+      })
+      .catch((err) => alert(err));
+  }
+
+  function deleteItem(name) {
+    if (!confirm("Bạn có chắc chắn muốn xóa: " + name + "?")) return;
+
+    const fullPath = currentPath + "\\" + name;
+    fetch("/remote/api/file/delete/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value,
+      },
+      body: JSON.stringify({ path: fullPath }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        alert(data.message);
+        if (data.success) loadDirectory(currentPath); 
+      });
+  }
+</script>
+{% endblock content %}
