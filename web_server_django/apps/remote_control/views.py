@@ -670,42 +670,38 @@ def webcam_delete(request, recording_id):
         logger.error(f"Delete recording error: {str(e)}")
         return JsonResponse({"success": False, "message": str(e)}, status=500)
     
-# ==================== FILE MANAGER SECTION ====================
+# ==================== FILE MANAGER STRICT MODE ====================
 
 @require_http_methods(["GET"])
 def file_manager_page(request):
     """
-    Render trang File Manager.
-    Logic: Kiểm tra nghiêm ngặt. Nếu chưa chọn Server hoặc Socket mất kết nối
-    thì báo về giao diện là chưa kết nối.
+    Trang File Manager - Tối giản
+    Vẫn giữ logic kiểm tra kết nối để chặn truy cập trái phép.
     """
-    # 1. Lấy thông tin Server từ Session
     server_ip = request.session.get('target_server_ip')
-    
-    # 2. Lấy đối tượng Client để kiểm tra kết nối thực tế
     client = _get_client(request)
     
-    # 3. Xác định trạng thái: Phải có IP VÀ Client phải đang connected
+    # Logic kiểm tra chặt chẽ: Phải có Session và Socket đang sống
     is_connected = False
     if server_ip and client and client.connected:
         is_connected = True
-        
+    
+    # Chỉ truyền biến này để quyết định có hiện bảng file hay không
     context = {
-        'is_connected': is_connected,
-        'server_ip': server_ip if server_ip else "Unknown"
+        'is_connected': is_connected
     }
     return render(request, 'remote_control/file_manager.html', context)
 
 
-# --- CÁC API BÊN DƯỚI DÙNG ĐỂ JAVASCRIPT GỌI ---
+# --- CÁC API BÊN DƯỚI DÙNG CHO JAVASCRIPT ---
 
 @csrf_exempt
 def file_get_drives(request):
-    """API: Lấy danh sách ổ đĩa"""
+    """API: Lấy danh sách ổ đĩa (Có bảo vệ)"""
     client = _get_client(request)
-    # Chặn ngay nếu không có kết nối
+    # CHẶN ĐỨNG nếu chưa kết nối
     if not client or not client.connected: 
-        return JsonResponse({"success": False, "message": "Not connected to server"}, status=400)
+        return JsonResponse({"success": False, "message": "Access Denied: Not connected"}, status=403)
     
     try:
         result = client.file_get_drives()
@@ -717,10 +713,10 @@ def file_get_drives(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def file_get_dir(request):
-    """API: Lấy danh sách file trong thư mục"""
+    """API: Lấy danh sách file (Có bảo vệ)"""
     client = _get_client(request)
     if not client or not client.connected: 
-        return JsonResponse({"success": False, "message": "Not connected"}, status=400)
+        return JsonResponse({"success": False, "message": "Access Denied: Not connected"}, status=403)
     
     try:
         data = json.loads(request.body)
@@ -734,10 +730,10 @@ def file_get_dir(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def file_delete(request):
-    """API: Xóa file/folder"""
+    """API: Xóa file (Có bảo vệ)"""
     client = _get_client(request)
     if not client or not client.connected: 
-        return JsonResponse({"success": False, "message": "Not connected"}, status=400)
+        return JsonResponse({"success": False, "message": "Access Denied: Not connected"}, status=403)
     
     try:
         data = json.loads(request.body)
@@ -751,26 +747,21 @@ def file_delete(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def file_download(request):
-    """API: Tải file về"""
+    """API: Tải file (Có bảo vệ)"""
     client = _get_client(request)
     if not client or not client.connected: 
-        return JsonResponse({"success": False, "message": "Not connected"}, status=400)
+        return JsonResponse({"success": False, "message": "Access Denied: Not connected"}, status=403)
     
     try:
         data = json.loads(request.body)
         path = data.get('path')
         
         result = client.file_download(path)
-        
         if result.get('success'):
-            response = HttpResponse(
-                result['data'], 
-                content_type='application/octet-stream'
-            )
+            response = HttpResponse(result['data'], content_type='application/octet-stream')
             response['Content-Disposition'] = f'attachment; filename="{result["filename"]}"'
             return response
         else:
             return JsonResponse(result, status=404)
-            
     except Exception as e:
         return JsonResponse({"success": False, "message": str(e)}, status=500)
