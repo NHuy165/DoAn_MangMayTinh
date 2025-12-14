@@ -126,7 +126,6 @@
 
     // Lấy nút Disconnect
     const disconnectBtn = document.getElementById('disconnect-server-btn');
-    // updateDisconnectBtn(false); // mặc định enable
     
     // ==================== STATE VARIABLES ====================
     let streamInterval = null;
@@ -143,10 +142,9 @@
         connectionState.serverConnected &&
         connectionState.cameraOn &&
         streamInterval &&
-        Date.now() - lastFrameAt > 3000
+        Date.now() - lastFrameAt > 5000
       ) {
-        console.warn('🚨 Stream timeout detected');
-        handleServerDisconnected();
+        console.warn('🚨 Stream timeout (Lag) - Waiting for server...');
       }
     }, 1000);
 
@@ -332,6 +330,8 @@
 
       streamInterval = setInterval(async () => {
         try {
+          if (stopRecBtn.disabled && stopRecBtn.textContent === 'Stopping...') return;
+
           const response = await fetch('/remote/api/webcam/stream/');
 
           if (response.status === 204) {
@@ -340,20 +340,24 @@
           }
 
           if (!response.ok) {
-            throw new Error('Stream failed');
+            console.warn('Stream skipped frame'); 
+            return;
           }
 
           const blob = await response.blob();
           if (blob.size > 0) {
             lastFrameAt = Date.now();
-
             const url = URL.createObjectURL(blob);
             webcamPreview.src = url;
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            // Giữ URL lâu hơn chút để đỡ nháy
+            setTimeout(() => URL.revokeObjectURL(url), 500); 
           }
 
         } catch (err) {
-          console.warn('Stream error:', err.message);
+          // SỬA QUAN TRỌNG: ĐỪNG GỌI handleServerDisconnected() Ở ĐÂY
+          // Khi server bận lưu file video nặng, nó có thể timeout request này.
+          // Hãy để polling status quyết định việc disconnect.
+          console.warn('Stream momentary error:', err.message);
         }
       }, 100); // 10 FPS là đủ, đừng 33ms
     }
@@ -365,13 +369,6 @@
         streamInterval = null;
       }
       webcamPreview.src = '';
-    }
-
-    // Hàm cập nhật trạng thái nút
-    function updateDisconnectBtn(recording) {
-      if (!disconnectBtn) return; // an toàn nếu nút chưa tồn tại
-      disconnectBtn.disabled = recording; // disable khi recording=true
-      disconnectBtn.classList.toggle('opacity-50', recording); // optional: mờ nút khi disable
     }
     
     // ==================== RECORDING CONTROL ====================
@@ -410,8 +407,6 @@
           stopRecBtn.disabled = false;
           stopRecBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
           stopRecBtn.classList.add('bg-red-600', 'hover:bg-red-700');
-
-          updateDisconnectBtn(true); // disable nút
           
           showNotification('success', 'Recording started');
         } else {
@@ -426,6 +421,8 @@
     }
     
     async function stopRecording() {
+      stopStreaming(); 
+      
       stopRecBtn.disabled = true;
       stopRecBtn.textContent = 'Stopping...';
       
@@ -457,15 +454,18 @@
           stopRecBtn.classList.add('hidden');
           startRecBtn.classList.remove('hidden');
           startRecBtn.disabled = false;
-
-          updateDisconnectBtn(false); // enable nút
           
           // Refresh recordings list
           await loadRecordingsList();
+
+          if (connectionState.cameraOn) {
+             startStreaming();
+          }
           
           showNotification('success', `Recording saved: ${data.file_size}`);
         } else {
           showNotification('error', data.message);
+          if (connectionState.cameraOn) startStreaming();
         }
       } catch (error) {
         showNotification('error', 'Failed to stop recording: ' + error.message);
@@ -616,7 +616,7 @@
 
       showNotification(
         'info',
-        'Disconnected from server. Recording has been saved automatically.'
+        'Disconnected from server.'
       );
     }
 

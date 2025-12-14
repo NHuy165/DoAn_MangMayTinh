@@ -7,11 +7,9 @@
 
 <div class="p-4">
 
-  <!-- ===== Screen Controls ===== -->
   <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mb-6">
     <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Screen Controls</h2>
 
-    <!-- Status -->
     <div class="mb-4 flex flex-wrap items-center gap-6">
       <div class="flex items-center">
         <span class="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Screen:</span>
@@ -27,7 +25,6 @@
       </div>
     </div>
 
-    <!-- Buttons -->
     <div class="flex flex-wrap gap-3">
       <button id="btn-on" class="px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700">🖥 Turn On Screen</button>
       <button id="btn-off" class="px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 hidden">⏹ Turn Off Screen</button>
@@ -37,18 +34,16 @@
     </div>
   </div>
 
-  <!-- ===== Live Preview ===== -->
   <div id="preview-container" class="bg-gray-900 shadow rounded-lg mb-6 hidden">
     <div class="p-4">
       <h2 class="text-lg font-semibold text-white mb-4">Live Preview</h2>
       <div class="flex justify-center bg-black rounded-lg overflow-hidden">
         <img id="screen-preview" src="" class="max-w-full h-auto" style="max-height:600px" />
       </div>
-      <p class="text-sm text-gray-400 mt-2 text-center">Streaming ~5 FPS</p>
+      <p class="text-sm text-gray-400 mt-2 text-center">Streaming Live</p>
     </div>
   </div>
 
-  <!-- ===== Recordings List ===== -->
   <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
     <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">📹 Recorded Screens</h2>
 
@@ -75,7 +70,6 @@
 {% endblock content %}
 
 {% block extra_js %}
-
 <script>
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -87,7 +81,8 @@ document.addEventListener('DOMContentLoaded', () => {
     recStart: '/remote/api/screen/record/start',
     recStop: '/remote/api/screen/record/stop',
     list: '/remote/api/screen/list',
-    status: '/remote/api/screen/status'
+    status: '/remote/api/screen/status',
+    delete: '/remote/api/screen/delete/' 
   }
 
   /* ==================== STATE ==================== */
@@ -113,9 +108,31 @@ document.addEventListener('DOMContentLoaded', () => {
     previewWrap: document.getElementById('preview-container'),
     preview: document.getElementById('screen-preview'),
     list: document.getElementById('recording-list'),
-
-    disconnect: document.getElementById('disconnect-server-btn')
+    
+    disconnect: document.getElementById('disconnect-server-btn') // Nút disconnect ở navbar (nếu có)
   }
+
+  /* ==================== HELPER ==================== */
+  function getCookie(name) {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === (name + '=')) {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+  }
+
+  function showNotification(type, message) {
+      const colors = {'success': '✓', 'error': '✗', 'info': 'ℹ'};
+      alert(`${colors[type] || ''} ${message}`);
+  }
+
 
   /* ==================== RUNTIME ==================== */
   let streamInterval = null
@@ -124,24 +141,18 @@ document.addEventListener('DOMContentLoaded', () => {
   let lastFrameAt = Date.now()
   let hasHandledDisconnect = false
 
-  /* ==================== WATCHDOG ==================== */
+  /* ==================== WATCHDOG (FIXED) ==================== */
   setInterval(() => {
+    // SỬA: Chỉ log cảnh báo, KHÔNG tự disconnect khi lag
     if (
       screenState.serverConnected &&
       screenState.screenOn &&
-      Date.now() - lastFrameAt > 3000
+      Date.now() - lastFrameAt > 5000 
     ) {
-      console.warn('🚨 Screen stream timeout')
-      handleServerDisconnected()
+      console.warn('🚨 Screen stream timeout (Lag only - connection kept alive)')
     }
   }, 1000)
 
-  /* ==================== DISCONNECT BTN ==================== */
-  function updateDisconnectBtn(recording) {
-    if (!els.disconnect) return; // an toàn nếu nút chưa tồn tại
-    els.disconnect.disabled = recording; // disable khi recording=true
-    els.disconnect.classList.toggle('opacity-50', recording); // optional: mờ nút khi disable
-  }
 
   /* ==================== STREAM ==================== */
   function startStreaming() {
@@ -149,8 +160,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     streamInterval = setInterval(async () => {
       try {
+        if (els.re.disabled) return; // Nếu đang chờ stop thì pause request
+
         const res = await fetch(API.stream)
-        if (!res.ok) throw new Error('stream failed')
+        if (!res.ok) {
+           console.warn('Frame skip');
+           return;
+        }
 
         const blob = await res.blob()
         if (blob.size > 0) {
@@ -162,7 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (e) {
         console.warn('stream error:', e.message)
       }
-    }, 200) // ~5 FPS
+    }, 200) // 5 FPS
   }
 
   function stopStreaming() {
@@ -187,7 +203,10 @@ document.addEventListener('DOMContentLoaded', () => {
   async function turnOnScreen() {
     els.on.disabled = true
     try {
-      const r = await fetch(API.on, { method: 'POST' })
+      const r = await fetch(API.on, { 
+          method: 'POST', 
+          headers: {'X-CSRFToken': getCookie('csrftoken')}
+      })
       const d = await r.json()
       if (!d.success) throw new Error()
 
@@ -206,8 +225,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       lastFrameAt = Date.now()
       startStreaming()
+      showNotification('success', 'Screen turned ON')
     } catch {
-      alert('❌ Failed to turn on screen')
+      showNotification('error', 'Failed to turn on screen. (Check connection?)')
     } finally {
       els.on.disabled = false
     }
@@ -220,15 +240,19 @@ document.addEventListener('DOMContentLoaded', () => {
         await stopRecording()
       }
 
-      await fetch(API.off, { method: 'POST' })
+      await fetch(API.off, { 
+          method: 'POST', 
+          headers: {'X-CSRFToken': getCookie('csrftoken')}
+      })
 
       screenState.screenOn = false
       screenState.recording = false
 
       stopStreaming()
       resetUI()
+      showNotification('success', 'Screen turned OFF')
     } catch {
-      alert('❌ Failed to turn off screen')
+      showNotification('error', 'Failed to turn off screen')
     } finally {
       els.off.disabled = false
     }
@@ -237,7 +261,10 @@ document.addEventListener('DOMContentLoaded', () => {
   async function startRecording() {
     els.rs.disabled = true
     try {
-      const r = await fetch(API.recStart, { method: 'POST' })
+      const r = await fetch(API.recStart, { 
+          method: 'POST', 
+          headers: {'X-CSRFToken': getCookie('csrftoken')}
+      })
       const d = await r.json()
       if (!d.success) throw new Error()
 
@@ -254,18 +281,24 @@ document.addEventListener('DOMContentLoaded', () => {
       els.rs.classList.add('hidden')
       els.re.classList.remove('hidden')
 
-      updateDisconnectBtn(true); // disable nút
+      showNotification('success', 'Recording STARTED')
     } catch {
-      alert('❌ Failed to start recording')
+      showNotification('error', 'Failed to start recording')
     } finally {
       els.rs.disabled = false
     }
   }
 
   async function stopRecording() {
+    // Ưu tiên ngắt stream để lệnh stop đi nhanh hơn
+    stopStreaming() 
+    
     els.re.disabled = true
     try {
-      const r = await fetch(API.recStop, { method: 'POST' })
+      const r = await fetch(API.recStop, { 
+          method: 'POST', 
+          headers: {'X-CSRFToken': getCookie('csrftoken')}
+      })
       const d = await r.json()
       if (!d.success) throw new Error()
 
@@ -283,11 +316,17 @@ document.addEventListener('DOMContentLoaded', () => {
       els.re.classList.add('hidden')
       els.rs.classList.remove('hidden')
 
-      updateDisconnectBtn(false); // enable nút
-
       loadList()
-    } catch {
-      alert('❌ Failed to stop recording')
+      
+      showNotification('success', `Saved: ${d.filename} (${d.file_size})`)
+      
+      // Mở lại stream nếu chưa tắt màn hình
+      if (screenState.screenOn) startStreaming()
+
+    } catch (e) {
+      showNotification('error', 'Failed to stop recording')
+      // Lỗi cũng thử mở lại stream
+      if (screenState.screenOn) startStreaming()
     } finally {
       els.re.disabled = false
     }
@@ -311,7 +350,6 @@ document.addEventListener('DOMContentLoaded', () => {
           <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">${x.duration}</td>
           <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">${x.file_size}</td>
           <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-            
             <a href="${x.file_url}" target="_blank" class="text-blue-600 hover:text-blue-900 dark:text-blue-400 mr-3">View</a>
             <a href="${x.file_url}" download class="text-green-600 hover:text-green-900 dark:text-green-400 mr-3">Download</a>
             <button onclick="deleteRecording(${x.id})" class="text-red-600 hover:text-red-900 dark:text-red-400">Delete</button>
@@ -322,50 +360,48 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
   
+  // Hàm delete (đã sửa URL trong API object)
   window.deleteRecording = async function(id) {
       if (!confirm('Are you sure you want to delete this recording?')) return;
-      
       try {
-        const response = await fetch(`/remote/api/screen/delete/${id}/`, {
+        const response = await fetch(`${API.delete}${id}/`, {
           method: 'DELETE',
-          headers: {
-            'X-CSRFToken': getCookie('csrftoken')
-          }
+          headers: {'X-CSRFToken': getCookie('csrftoken')}
         });
-        
         const data = await response.json();
-        
         if (data.success) {
           showNotification('success', 'Recording deleted');
-          await loadRecordingsList();
+          await loadList();
         } else {
           showNotification('error', data.message);
         }
       } catch (error) {
-        showNotification('error', 'Failed to delete recording: ' + error.message);
+        showNotification('error', 'Failed to delete: ' + error.message);
       }
-    };
+  };
 
   /* ==================== DISCONNECT ==================== */
   function handleServerDisconnected() {
-    if (hasHandledDisconnect) return
-    hasHandledDisconnect = true
+    if (hasHandledDisconnect) return;
+    hasHandledDisconnect = true;
 
-    console.warn('🚨 Screen server disconnected')
+    console.warn('🚨 Screen server disconnected (Real status check)');
 
-    screenState.serverConnected = false
-    screenState.screenOn = false
-    screenState.recording = false
+    // Reset trạng thái UI về OFF
+    screenState.serverConnected = false;
+    screenState.screenOn = false;
+    screenState.recording = false;
 
-    stopStreaming()
+    stopStreaming(); // Dừng request ảnh
 
-    if (durationInterval) clearInterval(durationInterval)
-    durationInterval = null
-    recordingStartTime = null
+    if (durationInterval) clearInterval(durationInterval);
+    durationInterval = null;
+    recordingStartTime = null;
 
-    resetUI()
+    resetUI(); // Đổi nút bấm và màu sắc
 
-    alert('ℹ Disconnected from server. Recording has been saved automatically.')
+    // Thông báo chung chung, không hứa hẹn là "đã lưu file" nữa
+    showNotification('info', 'Lost connection to server. Please check the network.');
   }
 
   function resetUI() {
@@ -392,6 +428,25 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const r = await fetch(API.status)
       if (!r.ok) throw new Error()
+      
+      const data = await r.json()
+      
+      // Update nút bật/tắt dựa trên trạng thái thật từ server
+      if (data.stream_on !== screenState.screenOn) {
+         if (data.stream_on) {
+             // Server đang bật mà UI đang tắt -> Bật UI lên
+             hasHandledDisconnect = false;
+             screenState.screenOn = true;
+             els.status.textContent = '🟢 ON';
+             els.status.classList.add('text-green-600');
+             els.previewWrap.classList.remove('hidden');
+             els.on.classList.add('hidden');
+             els.off.classList.remove('hidden');
+             els.rs.classList.remove('hidden');
+             startStreaming();
+         }
+      }
+
       screenState.serverConnected = true
     } catch {
       handleServerDisconnected()

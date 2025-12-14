@@ -424,7 +424,7 @@ class PersistentRemoteClient:
 
     def screen_get_frame(self):
         if not self.connected: return None
-        if not self._lock.acquire(timeout=0.5): return None
+        if not self._lock.acquire(blocking=False): return None
         try:
             self._send_str("SCREEN_REC")
             self._send_str("GET_FRAME")
