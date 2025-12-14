@@ -880,3 +880,33 @@ def screen_get_status(request):
     client = _get_client(request)
     if not client: return JsonResponse({"stream_on": False, "recording": False})
     return JsonResponse(client.screen_status())
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def screen_delete(request, recording_id):
+    """
+    API: Xóa 1 recording
+    
+    Returns:
+        JSON: {"success": bool, "message": str}
+    """
+    try:
+        from .models import ScreenRecording
+        
+        recording = ScreenRecording.objects.get(id=recording_id)
+        
+        # Xóa file
+        if recording.file_path:
+            recording.file_path.delete()
+        
+        # Xóa DB record
+        recording.delete()
+        
+        return JsonResponse({"success": True, "message": "Recording deleted"})
+    
+    except ScreenRecording.DoesNotExist:
+        return JsonResponse({"success": False, "message": "Recording not found"}, status=404)
+    except Exception as e:
+        logger.error(f"Delete recording error: {str(e)}")
+        return JsonResponse({"success": False, "message": str(e)}, status=500)
