@@ -329,6 +329,17 @@ def execute_shell_command(request):
 def webcam_on(request):
     client = _get_client(request)
     if not client: return JsonResponse({"success": False, "message": "Not connected"}, status=400)
+    
+    # --- LOGIC MỚI: KIỂM TRA SCREEN RECORDER ---
+    try:
+        s_status = client.screen_status()
+        if s_status.get('stream_on') or s_status.get('recording'):
+            return JsonResponse({
+                "success": False, 
+                "message": "⚠️ Screen Recorder đang chạy!\nVui lòng tắt màn hình trước khi bật Webcam."
+            })
+    except: pass
+    
     try: return JsonResponse(client.webcam_on())
     except Exception as e: return JsonResponse({"success": False, "message": str(e)}, status=500)
 
@@ -513,6 +524,17 @@ def screen_list(request):
 def screen_stream_on(request):
     client = _get_client(request)
     if not client: return JsonResponse({"success": False, "message": "Not connected"}, status=400)
+    
+    # --- LOGIC MỚI: KIỂM TRA WEBCAM ---
+    try:
+        w_status = client.webcam_status()
+        if w_status.get('camera_on') or w_status.get('recording'):
+            return JsonResponse({
+                "success": False, 
+                "message": "⚠️ Webcam đang chạy!\nVui lòng tắt Camera trước khi bật chia sẻ màn hình."
+            })
+    except: pass
+    
     return JsonResponse(client.screen_start_stream())
 
 @csrf_exempt

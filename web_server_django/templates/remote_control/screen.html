@@ -208,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
           headers: {'X-CSRFToken': getCookie('csrftoken')}
       })
       const d = await r.json()
-      if (!d.success) throw new Error()
+      if (!d.success) throw new Error(d.message || 'Failed to turn on screen')
 
       hasHandledDisconnect = false
       screenState.serverConnected = true
@@ -226,8 +226,8 @@ document.addEventListener('DOMContentLoaded', () => {
       lastFrameAt = Date.now()
       startStreaming()
       showNotification('success', 'Screen turned ON')
-    } catch {
-      showNotification('error', 'Failed to turn on screen. (Check connection?)')
+    } catch (e) {
+      showNotification('error', e.message)
     } finally {
       els.on.disabled = false
     }
@@ -424,34 +424,87 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* ==================== STATUS POLLING ==================== */
-  setInterval(async () => {
+  async function checkStatus() {
     try {
       const r = await fetch(API.status)
       if (!r.ok) throw new Error()
       
       const data = await r.json()
       
-      // Update nút bật/tắt dựa trên trạng thái thật từ server
-      if (data.stream_on !== screenState.screenOn) {
+      // 1. STREAM STATUS
+      // Logic: Nếu trạng thái thay đổi HOẶC (server đang ON mà client chưa stream)
+      if (data.stream_on !== screenState.screenOn || (data.stream_on && !streamInterval)) {
+         
          if (data.stream_on) {
-             // Server đang bật mà UI đang tắt -> Bật UI lên
              hasHandledDisconnect = false;
              screenState.screenOn = true;
+             
+             // Update Text
              els.status.textContent = '🟢 ON';
              els.status.classList.add('text-green-600');
+             els.status.classList.remove('text-gray-500');
+             
+             // Update Khung hình
              els.previewWrap.classList.remove('hidden');
-             els.on.classList.add('hidden');
-             els.off.classList.remove('hidden');
-             els.rs.classList.remove('hidden');
+             
+             // --- UPDATE NÚT BẤM (QUAN TRỌNG) ---
+             els.on.classList.add('hidden');        // Ẩn nút Turn On
+             els.off.classList.remove('hidden');    // Hiện nút Turn Off
+             els.rs.classList.remove('hidden');     // Hiện nút Start Rec
+             
              startStreaming();
+         } else {
+             screenState.screenOn = false;
+             
+             // Update Text
+             els.status.textContent = '⚪ OFF';
+             els.status.classList.remove('text-green-600');
+             
+             // Reset UI về mặc định
+             els.previewWrap.classList.add('hidden');
+             els.on.classList.remove('hidden');     // Hiện lại nút Turn On
+             els.off.classList.add('hidden');
+             els.rs.classList.add('hidden');
+             els.re.classList.add('hidden');
+             
+             stopStreaming();
          }
+      }
+
+      // 2. RECORDING STATUS
+      if (data.recording !== screenState.recording) {
+          screenState.recording = data.recording;
+          if (data.recording) {
+              els.recStatus.textContent = '🔴 RECORDING';
+              els.recStatus.classList.add('text-red-600');
+              els.recStatus.classList.remove('text-gray-500');
+              
+              // Đang quay: Ẩn Start, Hiện Stop
+              els.rs.classList.add('hidden');
+              els.re.classList.remove('hidden');
+          } else {
+              els.recStatus.textContent = '⚪ STOPPED';
+              els.recStatus.classList.remove('text-red-600');
+              
+              // Dừng quay: Hiện Start (nếu màn hình đang mở), Ẩn Stop
+              if (screenState.screenOn) {
+                  els.rs.classList.remove('hidden');
+              }
+              els.re.classList.add('hidden');
+          }
       }
 
       screenState.serverConnected = true
     } catch {
       handleServerDisconnected()
     }
-  }, 3000)
+  }
+
+  // 2. Gọi hàm NGAY LẬP TỨC khi vào trang (Sửa lỗi lag 3-4s)
+  checkStatus();
+
+  // 3. Sau đó mới đặt lịch lặp lại mỗi 3s
+  setInterval(checkStatus, 3000);
 
   /* ==================== EVENTS ==================== */
   els.on.onclick = turnOnScreen

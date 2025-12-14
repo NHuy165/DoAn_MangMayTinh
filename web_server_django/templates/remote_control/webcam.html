@@ -53,7 +53,11 @@
       <div class="p-4">
         <h2 class="text-lg font-semibold text-white mb-4">Live Preview</h2>
         <div class="flex justify-center bg-black rounded-lg overflow-hidden">
-          <img id="webcam-preview" src="" alt="Webcam Preview" class="max-w-full h-auto" style="max-height: 600px;">
+          <img id="webcam-preview" src="" alt="Webcam Preview" 
+          class="max-w-full h-auto bg-black rounded-lg" 
+          style="max-height: 600px; min-height: 200px; display: block;"
+          onerror="this.style.opacity='0'" 
+          onload="this.style.opacity='1'">
         </div>
         <p class="text-sm text-gray-400 mt-2 text-center">Streaming at ~30 FPS</p>
       </div>
@@ -368,7 +372,9 @@
         clearInterval(streamInterval);
         streamInterval = null;
       }
-      webcamPreview.src = '';
+      // QUAN TRỌNG: Xóa src cũ đi để không hiện cái icon ảnh gãy xấu xí
+      webcamPreview.src = ''; 
+      webcamPreview.style.opacity = '0'; // Ẩn đi
     }
     
     // ==================== RECORDING CONTROL ====================
@@ -545,28 +551,79 @@
     async function updateStatus() {
       try {
         const response = await fetch('/remote/api/webcam/status/');
+        if (!response.ok) throw new Error('Server not reachable');
 
-        if (!response.ok) {
-          throw new Error('Server not reachable');
-        }
-
-        // 👉 fetch OK → server CONNECTED
         connectionState.serverConnected = true;
-        // hasShownDisconnectAlert = false;
-
         const data = await response.json();
 
-        // ==== CAMERA STATE ====
+        // ==== 1. TRẠNG THÁI CAMERA (ON/OFF) ====
         if (data.camera_on !== connectionState.cameraOn) {
           connectionState.cameraOn = data.camera_on;
 
+          // Cập nhật chữ trạng thái
           cameraStatus.textContent = data.camera_on ? '🟢 ON' : '⚪ OFF';
           cameraStatus.classList.toggle('text-green-600', data.camera_on);
 
+          // Ẩn/Hiện khung hình
           previewContainer.classList.toggle('hidden', !data.camera_on);
-          startRecBtn.classList.toggle('hidden', !data.camera_on);
+          
+          // --- CẬP NHẬT NÚT BẤM ---
+          if (data.camera_on) {
+              // 1. Nút Turn Off
+              turnOnBtn.classList.add('hidden');
+              turnOffBtn.classList.remove('hidden');
+              turnOffBtn.disabled = false;
+              turnOffBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+              turnOffBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+              
+              // 2. Nút Start Recording (SỬA LẠI ĐOẠN NÀY)
+              startRecBtn.classList.remove('hidden');
+              
+              // 👇👇👇 THÊM 3 DÒNG NÀY ĐỂ BẤM ĐƯỢC 👇👇👇
+              startRecBtn.disabled = false; 
+              startRecBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+              startRecBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+              // 👆👆👆 -------------------------------- 👆👆👆
+              
+              startStreaming(); 
+          } else {
+              // Nếu đang OFF
+              turnOnBtn.classList.remove('hidden');
+              turnOffBtn.classList.add('hidden');
+              
+              startRecBtn.classList.add('hidden');
+              stopRecBtn.classList.add('hidden');
+              
+              stopStreaming();
+          }
         }
-
+        
+        // ==== 2. TRẠNG THÁI RECORDING ====
+        if (data.recording !== connectionState.recording) {
+             connectionState.recording = data.recording;
+             
+             if (data.recording) {
+                 recordingStatus.textContent = '🔴 RECORDING';
+                 recordingStatus.classList.add('text-red-600');
+                 
+                 startRecBtn.classList.add('hidden');
+                 stopRecBtn.classList.remove('hidden');
+                 stopRecBtn.disabled = false;
+             } else {
+                 recordingStatus.textContent = '⚪ STOPPED';
+                 recordingStatus.classList.remove('text-red-600');
+                 
+                 // Nếu cam đang mở thì hiện lại nút Start
+                 if (connectionState.cameraOn) {
+                    startRecBtn.classList.remove('hidden');
+                    // Đảm bảo nút Start hiện lại cũng phải bấm được
+                    startRecBtn.disabled = false;
+                    startRecBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+                    startRecBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+                 }
+                 stopRecBtn.classList.add('hidden');
+             }
+        }
 
       } catch (err) {
         handleServerDisconnected();
@@ -638,12 +695,37 @@
     // ==================== INITIALIZATION ====================
     // Load recordings list on page load
     loadRecordingsList();
+
+    // ==================== FIX LỖI ẢNH GÃY KHI CHUYỂN TAB ====================
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            // Khi người dùng quay lại tab
+            if (connectionState.cameraOn) {
+                console.log('👁 Tab active -> Resume stream');
+                // 1. Cập nhật lại trạng thái từ server xem cam còn bật không
+                updateStatus(); 
+                // 2. Khởi động lại luồng stream mới
+                startStreaming(); 
+            }
+        } else {
+            // Khi người dùng rời tab
+            if (connectionState.cameraOn) {
+                console.log('zzz Tab hidden -> Pause stream');
+                // Tắt stream ngay để tránh tích tụ lỗi và tiết kiệm băng thông
+                stopStreaming();
+            }
+        }
+    });
+
+    // ==================== HẾT PHẦN FIX ====================
     
     // Initial status check
     updateStatus();
 
     // Poll status every 3 seconds
     setInterval(updateStatus, 3000);
+
+    
   });
   </script>
   {% endblock extra_js %}
