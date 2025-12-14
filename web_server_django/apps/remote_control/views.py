@@ -2,20 +2,21 @@
 Remote Control Views - Django API Endpoints với Persistent Connection
 Sử dụng Session-based connection management và UDP Discovery
 """
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.core.files.base import ContentFile
 import json
 import logging
+from .models import WebcamRecording
+import os
 
 # Import Persistent Client và UDP Discovery
 from .socket_client_persistent import PersistentRemoteClient
 from .udp_discovery import UDPDiscoveryClient
 
 logger = logging.getLogger(__name__)
-
 
 def _get_client(request):
     """
@@ -556,6 +557,11 @@ def webcam_stream(request):
     Returns:
         JPEG image bytes hoặc error
     """
+
+    if not request.session.get('target_server_ip'):
+        # Trả về 204 No Content (im lặng) thay vì lỗi 400 ồn ào
+        return HttpResponse(status=204)
+    
     client = _get_client(request)
     if not client:
         return HttpResponse("Not connected", status=400)
@@ -621,6 +627,9 @@ def webcam_stop_recording(request):
         video_data = result.get('video_data', b'')
         file_size = result.get('file_size', 0)
         
+        # Lấy duration từ kết quả trả về (mặc định 0 nếu không có)
+        duration_sec = result.get('duration', 0)
+
         if not video_data:
             return JsonResponse({"success": False, "message": "No video data received"})
         
@@ -630,7 +639,7 @@ def webcam_stop_recording(request):
             server_ip=server_ip,
             filename=filename,
             file_size=file_size,
-            duration=0  # TODO: Calculate from video metadata
+            duration=duration_sec
         )
         
         # Lưu file (Django tự động tạo thư mục theo upload_to)
@@ -691,6 +700,8 @@ def webcam_list(request):
             ]
         }
     """
+    cleanup_missing_recordings()
+
     try:
         from .models import WebcamRecording
         
@@ -703,13 +714,23 @@ def webcam_list(request):
         
         recordings_data = []
         for rec in recordings:
+            # --- XỬ LÝ FORMAT DURATION (HH:MM:SS) ---
+            duration_str = str(rec.duration).lower().replace('s', '')
+            formatted_duration = "00:00:00"
+            
+            if duration_str.isdigit():
+                seconds = int(duration_str)
+                m, s = divmod(seconds, 60)
+                h, m = divmod(m, 60)
+                formatted_duration = "{:02d}:{:02d}:{:02d}".format(h, m, s) 
+
             recordings_data.append({
                 "id": rec.id,
                 "filename": rec.filename,
                 "file_url": rec.file_path.url if rec.file_path else "",
                 "recorded_at": rec.recorded_at.strftime("%Y-%m-%d %H:%M:%S"),
                 "file_size": rec.get_file_size_display(),
-                "duration": rec.get_duration_display()
+                "duration": formatted_duration
             })
         
         return JsonResponse({
