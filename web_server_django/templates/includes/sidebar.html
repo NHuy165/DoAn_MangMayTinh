@@ -174,7 +174,17 @@
                             </li>
                         </ul> -->
                     </li>
-
+                    <li>
+                        <a href="{% url 'remote_control:file_manager' %}"
+                            class="flex items-center p-2 text-base text-gray-900 rounded-lg hover:bg-gray-100 group dark:text-gray-200 dark:hover:bg-gray-700">
+                            <svg class="w-6 h-6 text-gray-500 transition duration-75 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white"
+                                fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                                <path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1H8a3 3 0 00-3 3v1.5a1.5 1.5 0 01-3 0V6z" clip-rule="evenodd"></path>
+                                <path d="M6 12a2 2 0 012-2h8a2 2 0 012 2v2a2 2 0 01-2 2H2h2a2 2 0 002-2v-2z"></path>
+                            </svg>
+                            <span class="ml-3" sidebar-toggle-item>File Manager</span>
+                        </a>
+                    </li>
                     <!-- Điều khiển nguồn -->
                     <li>
                         <a href="/remote/power/"

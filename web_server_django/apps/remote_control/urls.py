@@ -23,6 +23,9 @@ urlpatterns = [
     path('webcam/', views.webcam_page, name='webcam'),
     
     path('power/', views.power_page, name='power'),
+
+    # [NEW] Trang File Manager (được thêm vào nhóm Feature Pages)
+    path('file-manager/', views.file_manager_page, name='file_manager'),
     
     # ==================== API ENDPOINTS ====================
     # API Endpoints - Server Info
@@ -63,6 +66,12 @@ urlpatterns = [
     path('api/webcam/list/', views.webcam_list, name='api_webcam_list'),
     path('api/webcam/delete/<int:recording_id>/', views.webcam_delete, name='api_webcam_delete'),
     
+    # [NEW] API Endpoints - File Manager
+    path('api/file/drives/', views.file_get_drives, name='api_file_drives'),
+    path('api/file/list/', views.file_get_dir, name='api_file_list'),
+    path('api/file/delete/', views.file_delete, name='api_file_delete'),
+    path('api/file/download/', views.file_download, name='api_file_download'),
+
     # API Endpoints - Power Control
     path('api/power/', views.power_action, name='api_power_action'),
 ]
