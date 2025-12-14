@@ -45,7 +45,7 @@ bây giờ, trước hết hãy đọc lại file structure.txt để xem bạn 
 ## Prompt:
 Cài NuGet Packages:
 
-Mở Package Manager Console trong Visual Studio và chạy các lệnh sau: tôi chưa hiểu, mở package manager console là làm như thế nào
+Mở Package Manager Console trong Visual Studio và chạy các lệnh sau: tôi chưa hiểu, mở package manager console là làm như thế nào, làm thế nào để tải xuống chi tiết cụ thể, hướng dẫn tôi chi tiết vì tôi chưa có sài vs lần nào
 
 ## Prompt:
 PM\> Install-Package AForge.Video.DirectShow
