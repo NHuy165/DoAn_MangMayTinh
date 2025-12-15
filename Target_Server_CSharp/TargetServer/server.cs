@@ -117,6 +117,10 @@ namespace ServerApp
                     case "SCREEN_REC": screen_rec(); break;
                     case "SHUTDOWN": Process.Start("ShutDown", "-s"); break;
                     case "RESTART": Process.Start("shutdown", "/r /t 0"); break;
+                    case "FILE":
+                        FileManager fm = new FileManager();
+                        fm.HandleFileCommand();
+                        break;
                     case "QUIT": return;
                 }
             }

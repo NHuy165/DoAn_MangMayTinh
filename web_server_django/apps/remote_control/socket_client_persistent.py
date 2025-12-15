@@ -377,6 +377,7 @@ class PersistentRemoteClient:
             except: 
                 return {"camera_on": False, "recording": False}
     
+<<<<<<< HEAD
     # ==================== MODULE SCREEN RECORDER (MỚI) ====================
     
     def screen_start_stream(self):
@@ -452,3 +453,119 @@ class PersistentRemoteClient:
                 # Không cần đợi phản hồi vì Server sẽ tự thoát ra ngay
             except:
                 pass
+=======
+    def file_get_drives(self):
+        """Lấy danh sách ổ đĩa"""
+        if not self.connected: return {"success": False, "message": "Not connected"}
+        
+        with self._lock:
+            try:
+                self._send_str("FILE")
+                self._send_str("GET_DRIVES")
+                
+                count_str = self._recv_line()
+                drives = []
+                
+                if count_str.isdigit():
+                    count = int(count_str)
+                    for _ in range(count):
+                        line = self._recv_line() # Format: C:\|Fixed|100GB Free
+                        parts = line.split('|')
+                        if len(parts) >= 3:
+                            drives.append({
+                                "path": parts[0],
+                                "type": parts[1],
+                                "info": parts[2]
+                            })
+                
+                self._send_str("QUIT")
+                return {"success": True, "drives": drives}
+            except Exception as e:
+                return {"success": False, "message": str(e)}
+
+    def file_get_directory(self, path):
+        """Lấy danh sách file/folder trong đường dẫn"""
+        if not self.connected: return {"success": False, "message": "Not connected"}
+        
+        with self._lock:
+            try:
+                self._send_str("FILE")
+                self._send_str("GET_DIR")
+                self._send_str(path) # Gửi đường dẫn muốn xem
+                
+                response = self._recv_line()
+                
+                # Nếu response là ERROR
+                if response == "ERROR":
+                    err_msg = self._recv_line()
+                    self._send_str("QUIT")
+                    return {"success": False, "message": err_msg}
+                
+                # Nếu response là số lượng
+                items = []
+                if response.isdigit():
+                    count = int(response)
+                    for _ in range(count):
+                        line = self._recv_line() # Format: TYPE|NAME|INFO
+                        parts = line.split('|')
+                        if len(parts) >= 3:
+                            items.append({
+                                "type": parts[0], # DIR hoặc FILE
+                                "name": parts[1],
+                                "size": parts[2]
+                            })
+                            
+                self._send_str("QUIT")
+                return {"success": True, "items": items, "current_path": path}
+            except Exception as e:
+                return {"success": False, "message": str(e)}
+
+    def file_delete_item(self, path):
+        """Xóa file hoặc folder"""
+        if not self.connected: return {"success": False, "message": "Not connected"}
+        
+        with self._lock:
+            try:
+                self._send_str("FILE")
+                self._send_str("DELETE")
+                self._send_str(path)
+                
+                status = self._recv_line() # SUCCESS hoặc ERROR
+                message = self._recv_line()
+                
+                self._send_str("QUIT")
+                return {"success": (status == "SUCCESS"), "message": message}
+            except Exception as e:
+                return {"success": False, "message": str(e)}
+
+    def file_download(self, path):
+        """Tải file về (Binary)"""
+        if not self.connected: return {"success": False, "message": "Not connected"}
+        
+        with self._lock:
+            try:
+                self._send_str("FILE")
+                self._send_str("DOWNLOAD")
+                self._send_str(path)
+                
+                size_str = self._recv_line()
+                
+                if not size_str.isdigit() or int(size_str) == 0:
+                    self._send_str("QUIT")
+                    return {"success": False, "message": "File not found or empty"}
+                
+                file_size = int(size_str)
+                # Nhận Binary Data (dùng hàm _recv_bytes có sẵn)
+                file_data = self._recv_bytes(file_size)
+                
+                self._send_str("QUIT")
+                
+                # Trả về bytes để Django tạo file response
+                return {
+                    "success": True, 
+                    "filename": path.split('\\')[-1], # Lấy tên file từ path
+                    "data": file_data
+                }
+            except Exception as e:
+                return {"success": False, "message": str(e)}
+>>>>>>> origin/main
