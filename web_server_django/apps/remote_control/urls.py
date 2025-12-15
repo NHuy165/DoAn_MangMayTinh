@@ -76,7 +76,6 @@ urlpatterns = [
 
     # API Endpoints - Power Control
     path('api/power/', views.power_action, name='api_power_action'),
-<<<<<<< HEAD
 
     # API Endpoints - CMD
     path('shell/', views.shell_page, name='shell'),
@@ -93,6 +92,3 @@ urlpatterns = [
     path('api/screen/status', views.screen_get_status, name='screen_status'),
     path('api/screen/delete/<int:recording_id>/', views.screen_delete, name='screen_delete'),
 ]
-=======
-]
->>>>>>> origin/main

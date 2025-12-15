@@ -377,7 +377,6 @@ class PersistentRemoteClient:
             except: 
                 return {"camera_on": False, "recording": False}
     
-<<<<<<< HEAD
     # ==================== MODULE SCREEN RECORDER (MỚI) ====================
     
     def screen_start_stream(self):
@@ -441,7 +440,7 @@ class PersistentRemoteClient:
                 return {"stream_on": is_on, "recording": is_rec}
             except: return {"stream_on": False, "recording": False}
 
-# ==================== HÀM TỰ RESET CMD SHELL ====================
+    # ==================== HÀM TỰ RESET CMD SHELL ====================
    
     def shell_reset(self):
         """Gửi lệnh reset đường dẫn CMD về mặc định"""
@@ -453,7 +452,9 @@ class PersistentRemoteClient:
                 # Không cần đợi phản hồi vì Server sẽ tự thoát ra ngay
             except:
                 pass
-=======
+            
+    # ==================== MODULE FILE HANDLING ====================
+
     def file_get_drives(self):
         """Lấy danh sách ổ đĩa"""
         if not self.connected: return {"success": False, "message": "Not connected"}
@@ -568,4 +569,3 @@ class PersistentRemoteClient:
                 }
             except Exception as e:
                 return {"success": False, "message": str(e)}
->>>>>>> origin/main

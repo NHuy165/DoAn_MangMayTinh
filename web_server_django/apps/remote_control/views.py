@@ -771,7 +771,6 @@ def webcam_delete(request, recording_id):
     except Exception as e:
         logger.error(f"Delete recording error: {str(e)}")
         return JsonResponse({"success": False, "message": str(e)}, status=500)
-<<<<<<< HEAD
 
 # ==================== SCREEN RECORDING APIs (MỚI) ====================
 
@@ -901,7 +900,6 @@ def screen_delete(request, recording_id):
     
     except ScreenRecording.DoesNotExist:
         return JsonResponse({"success": False, "message": "Recording not found"}, status=404)
-=======
     
 # ==================== FILE MANAGER STRICT MODE ====================
 
@@ -996,6 +994,5 @@ def file_download(request):
             return response
         else:
             return JsonResponse(result, status=404)
->>>>>>> origin/main
     except Exception as e:
         return JsonResponse({"success": False, "message": str(e)}, status=500)
