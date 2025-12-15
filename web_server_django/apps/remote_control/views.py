@@ -775,19 +775,16 @@ def webcam_delete(request, recording_id):
 # ==================== SCREEN RECORDING APIs (MỚI) ====================
 
 @require_http_methods(["GET"])
+@require_http_methods(["GET"])
 def screen_list(request):
     cleanup_missing_recordings()
-
     try:
-        # Import model mới
         from .models import ScreenRecording
-        
-        # Lấy tất cả ScreenRecordings (không cần lọc tên nữa vì đã tách bảng)
         recordings = ScreenRecording.objects.all().order_by('-recorded_at')
         
         data = []
         for rec in recordings:
-            # Format thời gian (MM:SS)
+            # --- COPY LOGIC FORMAT TỪ WEBCAM ---
             duration_str = str(rec.duration)
             formatted_duration = "00:00:00"
             if duration_str.isdigit():
@@ -795,6 +792,7 @@ def screen_list(request):
                 m, s = divmod(seconds, 60)
                 h, m = divmod(m, 60)
                 formatted_duration = "{:02d}:{:02d}:{:02d}".format(h, m, s)
+            # -----------------------------------
 
             data.append({
                 "id": rec.id,
@@ -802,7 +800,7 @@ def screen_list(request):
                 "file_url": rec.file_path.url if rec.file_path else "",
                 "recorded_at": rec.recorded_at.strftime("%Y-%m-%d %H:%M:%S"),
                 "file_size": rec.get_file_size_display(),
-                "duration": formatted_duration
+                "duration": formatted_duration # Đã format đẹp
             })
         return JsonResponse({"success": True, "recordings": data})
     except Exception as e:
@@ -846,30 +844,26 @@ def screen_stop_rec(request):
         result = client.screen_stop_recording()
         if not result.get('success'): return JsonResponse(result)
         
-        # Import model mới
         from .models import ScreenRecording
         from django.core.files.base import ContentFile
         
         filename = result.get('filename', 'unknown.avi')
-        # Thêm prefix SCREEN_ để dễ nhận biết (tùy chọn)
         final_filename = "SCREEN_" + filename 
         
-        # Lưu vào model ScreenRecording
         rec = ScreenRecording(
             server_ip=request.session.get('target_server_ip', 'unknown'),
             filename=final_filename,
             file_size=result.get('file_size'),
-            duration=result.get('duration')
+            duration=result.get('duration', 0)
         )
-        
-        # Django sẽ tự lưu vào media/screen_recordings/YYYY/MM/DD/ nhờ upload_to trong models.py
         rec.file_path.save(final_filename, ContentFile(result.get('video_data')), save=True)
         
         return JsonResponse({
             "success": True, 
             "message": "Saved successfully",
             "filename": final_filename,
-            "file_size": rec.get_file_size_display(),
+            # Trả về chuỗi size dễ đọc (VD: 5.2 MB) thay vì bytes
+            "file_size": rec.get_file_size_display(), 
             "duration": result.get('duration')
         })
         
@@ -880,3 +874,31 @@ def screen_get_status(request):
     client = _get_client(request)
     if not client: return JsonResponse({"stream_on": False, "recording": False})
     return JsonResponse(client.screen_status())
+
+# Trong file views.py
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def screen_delete(request, recording_id):
+    """
+    API: Xóa 1 bản ghi màn hình
+    """
+    try:
+        # Import đúng Model ScreenRecording
+        from .models import ScreenRecording
+        
+        recording = ScreenRecording.objects.get(id=recording_id)
+        
+        # 1. Xóa file vật lý trên ổ cứng
+        if recording.file_path:
+            recording.file_path.delete()
+        
+        # 2. Xóa record trong Database
+        recording.delete()
+        
+        return JsonResponse({"success": True, "message": "Recording deleted"})
+    
+    except ScreenRecording.DoesNotExist:
+        return JsonResponse({"success": False, "message": "Recording not found"}, status=404)
+    except Exception as e:
+        return JsonResponse({"success": False, "message": str(e)}, status=500)

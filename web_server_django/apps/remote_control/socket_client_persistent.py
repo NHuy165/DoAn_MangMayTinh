@@ -258,29 +258,74 @@ class PersistentRemoteClient:
                 self.connected = False
                 return {"status": "error", "message": str(e)}
 
-    # ==================== PHẦN WEBCAM CỦA BẠN (Đã sửa I/O an toàn) ====================
+    # --- HELPER MỚI: Xử lý chung cho Webcam và Screen ---
+    def _generic_recorder_action(self, module_name, action, is_stop=False):
+        """
+        Hàm xử lý chung cho Webcam và Screen.
+        module_name: "WEBCAM" hoặc "SCREEN_REC"
+        action: "ON", "OFF", "START_REC", "STOP_REC"...
+        is_stop: Nếu là lệnh dừng quay (STOP_REC) thì cần xử lý nhận file
+        """
+        if not self.connected: 
+            return {"success": False, "message": "Not connected"}
+        
+        with self._lock:
+            try:
+                self._send_str(module_name) # Gửi tên module (VD: WEBCAM)
+                self._send_str(action)      # Gửi lệnh (VD: START_REC)
+                
+                # Nếu KHÔNG phải lệnh Stop Recording, chỉ cần đọc phản hồi đơn giản
+                if not is_stop:
+                    response = self._recv_line()
+                    self._send_str("QUIT")
+                    return {"success": True, "message": response} # Coi như luôn true nếu không exception
+                
+                # --- XỬ LÝ RIÊNG CHO STOP RECORDING (Nhận file) ---
+                response = self._recv_line()
+                if "STOPPED" not in response: # Check lỏng để khớp cả 2
+                    self._send_str("QUIT")
+                    return {"success": False, "message": response}
+                
+                # Parse metadata: "STOPPED|filename|filesize|duration"
+                parts = response.split('|')
+                filename = parts[1] if len(parts) > 1 else "video.avi"
+                duration = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+                
+                # Nhận size thật để tải binary
+                size_check = self._recv_line()
+                if not size_check.isdigit():
+                    self._send_str("QUIT")
+                    return {"success": False, "message": "Protocol Error"}
+                
+                real_size = int(size_check)
+                video_data = self._recv_bytes(real_size) if real_size > 0 else b''
+                
+                self._send_str("QUIT")
+                return {
+                    "success": True, 
+                    "message": "Saved", 
+                    "filename": filename, 
+                    "file_size": real_size, 
+                    "video_data": video_data, 
+                    "duration": duration
+                }
+
+            except Exception as e:
+                return {"success": False, "message": str(e)}
+            
 
     def webcam_on(self):
-        if not self.connected: return {"success": False, "message": "Not connected"}
-        with self._lock:
-            try:
-                self._send_str("WEBCAM")
-                self._send_str("ON")
-                response = self._recv_line()
-                return {"success": response == "CAMERA_ON", "message": response}
-            except Exception as e: return {"success": False, "message": str(e)}
+        return self._generic_recorder_action("WEBCAM", "ON")
 
     def webcam_off(self):
-        if not self.connected: return {"success": False, "message": "Not connected"}
-        with self._lock:
-            try:
-                self._send_str("WEBCAM")
-                self._send_str("OFF")
-                response = self._recv_line()
-                self._send_str("QUIT")
-                return {"success": response == "CAMERA_OFF", "message": response}
-            except Exception as e: return {"success": False, "message": str(e)}
-
+        return self._generic_recorder_action("WEBCAM", "OFF")
+        
+    def webcam_start_recording(self):
+        return self._generic_recorder_action("WEBCAM", "START_REC")
+        
+    def webcam_stop_recording(self):
+        return self._generic_recorder_action("WEBCAM", "STOP_REC", is_stop=True)
+    
     def webcam_get_frame(self):
         """
         Lấy frame cho streaming.
@@ -315,66 +360,6 @@ class PersistentRemoteClient:
             return None
         finally:
             self._lock.release()
-
-    def webcam_start_recording(self):
-        if not self.connected: return {"success": False, "message": "Not connected"}
-        with self._lock:
-            try:
-                self._send_str("WEBCAM")
-                self._send_str("START_REC")
-                response = self._recv_line()
-                self._send_str("QUIT") # Thoát module webcam để trả về root menu
-                return {"success": response == "RECORDING_STARTED", "message": response}
-            except Exception as e: return {"success": False, "message": str(e)}
-
-    def webcam_stop_recording(self):
-        if not self.connected: return {"success": False, "message": "Not connected"}
-        with self._lock:
-            try:
-                self._send_str("WEBCAM")
-                self._send_str("STOP_REC")
-                
-                # Format trả về từ C#: "RECORDING_STOPPED|filename|filesize|duration"
-                response = self._recv_line()
-                
-                if not response.startswith("RECORDING_STOPPED"):
-                    self._send_str("QUIT")
-                    return {"success": False, "message": response}
-                
-                parts = response.split('|')
-                filename = parts[1] if len(parts) > 1 else "video.avi"
-                
-                # --- LOGIC MỚI: LẤY DURATION ---
-                duration = 0
-                if len(parts) > 3 and parts[3].isdigit():
-                    duration = int(parts[3])
-                # -------------------------------
-
-                # Server gửi tiếp 1 dòng chứa size thật của file (để check protocol)
-                size_check = self._recv_line()
-                if not size_check.isdigit():
-                    self._send_str("QUIT")
-                    return {"success": False, "message": "Protocol Error: Invalid size"}
-                
-                real_size = int(size_check)
-                if real_size > 0:
-                    # ĐỌC FILE VIDEO (BINARY)
-                    video_data = self._recv_bytes(real_size)
-                else:
-                    video_data = b''
-
-                self._send_str("QUIT")
-                
-                return {
-                    "success": True, 
-                    "message": "Saved", 
-                    "filename": filename, 
-                    "file_size": real_size, 
-                    "video_data": video_data,
-                    "duration": duration # Trả về duration cho views.py dùng
-                }
-            except Exception as e:
-                return {"success": False, "message": str(e)}
             
     def webcam_status(self):
         if not self.connected: return {"camera_on": False, "recording": False}
@@ -391,98 +376,55 @@ class PersistentRemoteClient:
                 return {"camera_on": is_on, "recording": is_rec}
             except: 
                 return {"camera_on": False, "recording": False}
-         
-# ==================== HÀM TỰ RESET CMD SHELL ====================
-   
-    def shell_reset(self):
-        """Gửi lệnh reset đường dẫn CMD về mặc định"""
-        if not self.connected: return
-        with self._lock:
-            try:
-                self._send_str("CMD")   # Vào module CMD
-                self._send_str("RESET") # Gửi lệnh Reset biến toàn cục
-                # Không cần đợi phản hồi vì Server sẽ tự thoát ra ngay
-            except:
-                pass
     
-# ==================== MODULE SCREEN RECORDER (MỚI) ====================
-    # DÁN ĐOẠN NÀY VÀO TRONG CLASS PersistentRemoteClient
-
+    # ==================== MODULE SCREEN RECORDER (MỚI) ====================
+    
     def screen_start_stream(self):
-        if not self.connected: return {"success": False, "message": "Not connected"}
-        with self._lock:
-            try:
-                self._send_str("SCREEN_REC")
-                self._send_str("START")
-                response = self._recv_line()
-                return {"success": response == "STREAM_ON", "message": response}
-            except Exception as e: return {"success": False, "message": str(e)}
+        return self._generic_recorder_action("SCREEN_REC", "START")
 
     def screen_stop_stream(self):
-        if not self.connected: return {"success": False, "message": "Not connected"}
-        with self._lock:
-            try:
-                self._send_str("SCREEN_REC")
-                self._send_str("STOP")
-                response = self._recv_line()
-                self._send_str("QUIT")
-                return {"success": response == "STREAM_OFF", "message": response}
-            except Exception as e: return {"success": False, "message": str(e)}
-
-    def screen_get_frame(self):
-        if not self.connected: return None
-        if not self._lock.acquire(timeout=0.5): return None
-        try:
-            self._send_str("SCREEN_REC")
-            self._send_str("GET_FRAME")
-            size_str = self._recv_line()
-            if not size_str.isdigit() or int(size_str) == 0:
-                self._send_str("QUIT")
-                return None
-            frame_data = self._recv_bytes(int(size_str))
-            self._send_str("QUIT")
-            return frame_data
-        except: return None
-        finally: self._lock.release()
+        return self._generic_recorder_action("SCREEN_REC", "STOP")
 
     def screen_start_recording(self):
-        if not self.connected: return {"success": False, "message": "Not connected"}
-        with self._lock:
-            try:
-                self._send_str("SCREEN_REC")
-                self._send_str("START_REC")
-                response = self._recv_line()
-                self._send_str("QUIT")
-                return {"success": response == "RECORDING_STARTED", "message": response}
-            except Exception as e: return {"success": False, "message": str(e)}
+        return self._generic_recorder_action("SCREEN_REC", "START_REC")
 
     def screen_stop_recording(self):
-        if not self.connected: return {"success": False, "message": "Not connected"}
-        with self._lock:
-            try:
-                self._send_str("SCREEN_REC")
-                self._send_str("STOP_REC")
-                response = self._recv_line()
-                if not response.startswith("RECORDING_STOPPED"):
-                    self._send_str("QUIT")
-                    return {"success": False, "message": response}
-                
-                parts = response.split('|')
-                filename = parts[1] if len(parts) > 1 else "screen.avi"
-                duration = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
-                
-                size_check = self._recv_line()
-                if not size_check.isdigit():
-                    self._send_str("QUIT")
-                    return {"success": False, "message": "Protocol Error"}
-                
-                real_size = int(size_check)
-                video_data = self._recv_bytes(real_size) if real_size > 0 else b''
+        return self._generic_recorder_action("SCREEN_REC", "STOP_REC", is_stop=True)
+    
+    def screen_get_frame(self):
+        """
+        Lấy frame màn hình. 
+        Cần lock non-blocking để tránh treo giao diện khi đang ghi hình.
+        """
+        if not self.connected: return None
+        
+        # Thử lấy lock, nếu server đang bận (ví dụ đang lưu file) thì bỏ qua frame này
+        if not self._lock.acquire(timeout=0.5): 
+            return None
+            
+        try:
+            self._send_str("SCREEN_REC") # Gửi tên module
+            self._send_str("GET_FRAME")  # Gửi lệnh lấy ảnh
+            
+            size_str = self._recv_line()
+            # Kiểm tra size hợp lệ
+            if not size_str.isdigit():
                 self._send_str("QUIT")
-                
-                return {"success": True, "message": "Saved", "filename": filename, 
-                        "file_size": real_size, "video_data": video_data, "duration": duration}
-            except Exception as e: return {"success": False, "message": str(e)}
+                return None
+            
+            size = int(size_str)
+            if size == 0:
+                self._send_str("QUIT")
+                return None
+            
+            # Đọc binary ảnh an toàn
+            frame_data = self._recv_bytes(size)
+            self._send_str("QUIT")
+            return frame_data
+        except Exception:
+            return None
+        finally:
+            self._lock.release()
 
     def screen_status(self):
         if not self.connected: return {"stream_on": False, "recording": False}
@@ -497,3 +439,16 @@ class PersistentRemoteClient:
                 is_rec = "true" in parts[1] if len(parts) > 1 else False
                 return {"stream_on": is_on, "recording": is_rec}
             except: return {"stream_on": False, "recording": False}
+
+# ==================== HÀM TỰ RESET CMD SHELL ====================
+   
+    def shell_reset(self):
+        """Gửi lệnh reset đường dẫn CMD về mặc định"""
+        if not self.connected: return
+        with self._lock:
+            try:
+                self._send_str("CMD")   # Vào module CMD
+                self._send_str("RESET") # Gửi lệnh Reset biến toàn cục
+                # Không cần đợi phản hồi vì Server sẽ tự thoát ra ngay
+            except:
+                pass

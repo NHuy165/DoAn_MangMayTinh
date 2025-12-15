@@ -81,4 +81,5 @@ urlpatterns = [
     path('api/screen/record/start', views.screen_start_rec, name='screen_rec_start'),
     path('api/screen/record/stop', views.screen_stop_rec, name='screen_rec_stop'),
     path('api/screen/status', views.screen_get_status, name='screen_status'),
+    path('api/screen/delete/<int:recording_id>/', views.screen_delete, name='screen_delete'),
 ]

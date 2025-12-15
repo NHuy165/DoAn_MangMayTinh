@@ -1,365 +1,325 @@
 {% extends 'layouts/base.html' %}
 {% load static %}
 
+{% block title %}Screen Recorder{% endblock %}
+
 {% block content %}
-<div class="d-sm-flex align-items-center justify-content-between mb-4">
-    <h1 class="h3 mb-0 text-gray-800">Screen Recorder</h1>
-    <span id="connection-status" class="badge badge-secondary shadow-sm">Connecting...</span>
+<div class="p-4 bg-white block sm:flex items-center justify-between border-b border-gray-200 lg:mt-1.5 dark:bg-gray-800 dark:border-gray-700">
+  <div class="w-full mb-1">
+    <div class="mb-4">
+      <h1 class="text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">🖥️ Screen Recorder</h1>
+      <p class="text-sm text-gray-500 dark:text-gray-400">Remote screen monitoring and recording</p>
+    </div>
+  </div>
 </div>
 
-<div class="row">
-
-    <div class="col-xl-8 col-lg-7">
-        <div class="card shadow mb-4">
-            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-                <h6 class="m-0 font-weight-bold text-primary">Live Screen Feed</h6>
-                <div class="dropdown no-arrow">
-                    <a class="dropdown-toggle" href="#" role="button" id="dropdownMenuLink"
-                        data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                        <i class="fas fa-ellipsis-v fa-sm fa-fw text-gray-400"></i>
-                    </a>
-                </div>
-            </div>
-            <div class="card-body">
-                <div class="text-center">
-                    <div id="stream-container" class="bg-dark rounded d-flex align-items-center justify-content-center mb-4" 
-                         style="min-height: 450px; overflow: hidden; position: relative;">
-                        
-                        <div id="placeholder-container" class="text-white-50">
-                            <i class="fas fa-desktop fa-4x mb-3"></i>
-                            <p>Stream is currently OFF</p>
-                        </div>
-
-                        <img id="screen-feed" src="" style="width: 100%; height: auto; display: none;" alt="Live Feed">
-                    </div>
-
-                    <div class="user-select-none">
-                        <button id="btn-turn-on" class="btn btn-success btn-icon-split btn-lg mr-2">
-                            <span class="icon text-white-50">
-                                <i class="fas fa-play"></i>
-                            </span>
-                            <span class="text">Turn On Screen</span>
-                        </button>
-
-                        <button id="btn-turn-off" class="btn btn-secondary btn-icon-split btn-lg mr-2" style="display: none;">
-                            <span class="icon text-white-50">
-                                <i class="fas fa-stop"></i>
-                            </span>
-                            <span class="text">Turn Off Screen</span>
-                        </button>
-
-                        <span class="mx-2">|</span>
-
-                        <button id="btn-start-rec" class="btn btn-danger btn-icon-split btn-lg mr-2" disabled>
-                            <span class="icon text-white-50">
-                                <i class="fas fa-circle"></i>
-                            </span>
-                            <span class="text">Rec</span>
-                        </button>
-
-                        <button id="btn-stop-rec" class="btn btn-outline-danger btn-icon-split btn-lg" style="display: none;">
-                            <span class="icon">
-                                <i class="fas fa-square"></i>
-                            </span>
-                            <span class="text">Stop Rec</span>
-                        </button>
-                    </div>
-
-                    <p id="status-msg" class="mt-3 small text-muted font-italic">&nbsp;</p>
-                </div>
-            </div>
+<div class="p-4">
+  <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mb-6">
+    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Screen Controls</h2>
+    
+    <div class="mb-4">
+      <div class="flex items-center space-x-4">
+        <div class="flex items-center">
+          <span class="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Stream:</span>
+          <span id="stream-status" class="text-sm font-semibold text-gray-500 dark:text-gray-400">⚪ OFF</span>
         </div>
-    </div>
-
-    <div class="col-xl-4 col-lg-5">
-        <div class="card shadow mb-4">
-            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-                <h6 class="m-0 font-weight-bold text-primary">Saved Recordings</h6>
-                <button class="btn btn-sm btn-primary shadow-sm" onclick="loadRecordings()">
-                    <i class="fas fa-sync-alt fa-sm"></i>
-                </button>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive" style="max-height: 550px; overflow-y: auto;">
-                    <table class="table table-bordered table-hover" width="100%" cellspacing="0">
-                        <thead class="thead-light">
-                            <tr>
-                                <th>Video Info</th>
-                                <th class="text-center" style="width: 60px;">DL</th>
-                            </tr>
-                        </thead>
-                        <tbody id="recording-list">
-                            <tr><td colspan="2" class="text-center small">Loading...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+        <div class="flex items-center">
+          <span class="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Recording:</span>
+          <span id="recording-status" class="text-sm font-semibold text-gray-500 dark:text-gray-400">⚪ STOPPED</span>
         </div>
+        <div id="duration-display" class="flex items-center hidden">
+          <span class="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Duration:</span>
+          <span id="recording-duration" class="text-sm font-semibold text-red-600 dark:text-red-400">00:00:00</span>
+        </div>
+      </div>
     </div>
+    
+    <div class="flex space-x-3">
+      <button id="turn-on-btn" type="button" class="text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5">
+        ▶ Start Stream
+      </button>
+      <button id="turn-off-btn" type="button" disabled class="text-white bg-gray-400 font-medium rounded-lg text-sm px-5 py-2.5 cursor-not-allowed">
+        ⏹ Stop Stream
+      </button>
+      <button id="start-rec-btn" type="button" disabled class="text-white bg-gray-400 font-medium rounded-lg text-sm px-5 py-2.5 cursor-not-allowed hidden">
+        🔴 Start Recording
+      </button>
+      <button id="stop-rec-btn" type="button" disabled class="text-white bg-gray-400 font-medium rounded-lg text-sm px-5 py-2.5 cursor-not-allowed hidden">
+        ⏹ Stop Recording
+      </button>
+      <button id="refresh-list-btn" type="button" class="text-gray-900 bg-white border border-gray-300 hover:bg-gray-100 font-medium rounded-lg text-sm px-5 py-2.5">
+        🔄 Refresh List
+      </button>
+    </div>
+  </div>
+  
+  <div id="preview-container" class="bg-gray-900 shadow rounded-lg mb-6 hidden">
+    <div class="p-4">
+      <h2 class="text-lg font-semibold text-white mb-4">Live Screen Feed</h2>
+      <div class="flex justify-center bg-black rounded-lg overflow-hidden">
+        <img id="screen-preview" src="" alt="Screen Preview" class="max-w-full h-auto" style="max-height: 600px;">
+      </div>
+      <p class="text-sm text-gray-400 mt-2 text-center">Streaming Live</p>
+    </div>
+  </div>
+  
+  <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">📼 Recorded Screen Videos</h2>
+    
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <thead class="bg-gray-50 dark:bg-gray-700">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date/Time</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filename</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="recordings-list" class="bg-white divide-y divide-gray-200 dark:bg-gray-800 dark:divide-gray-700">
+          <tr>
+            <td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">Loading...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <script>
-    document.addEventListener("DOMContentLoaded", function() {
-        // --- API CONFIG (Hardcoded) ---
-        const API_ON = "/remote/api/screen/on";
-        const API_OFF = "/remote/api/screen/off";
-        const API_STREAM = "/remote/api/screen/stream";
-        const API_REC_START = "/remote/api/screen/record/start";
-        const API_REC_STOP = "/remote/api/screen/record/stop";
-        const API_LIST = "/remote/api/screen/list";
-        const API_STATUS = "/remote/api/screen/status";
+document.addEventListener('DOMContentLoaded', function() {
+  // --- CONFIG ---
+  // Định nghĩa các API endpoint tương ứng cho Screen
+  const API = {
+    ON: '/remote/api/screen/on',
+    OFF: '/remote/api/screen/off',
+    STREAM: '/remote/api/screen/stream',
+    REC_START: '/remote/api/screen/record/start',
+    REC_STOP: '/remote/api/screen/record/stop',
+    LIST: '/remote/api/screen/list',
+    STATUS: '/remote/api/screen/status',
+    DELETE_BASE: '/remote/api/screen/delete/'
+  };
 
-        // --- DOM Elements ---
-        const btnOn = document.getElementById('btn-turn-on');
-        const btnOff = document.getElementById('btn-turn-off');
-        const btnStartRec = document.getElementById('btn-start-rec');
-        const btnStopRec = document.getElementById('btn-stop-rec');
+  // --- DOM ELEMENTS ---
+  const turnOnBtn = document.getElementById('turn-on-btn');
+  const turnOffBtn = document.getElementById('turn-off-btn');
+  const startRecBtn = document.getElementById('start-rec-btn');
+  const stopRecBtn = document.getElementById('stop-rec-btn');
+  const refreshListBtn = document.getElementById('refresh-list-btn');
+  
+  const streamStatus = document.getElementById('stream-status');
+  const recordingStatus = document.getElementById('recording-status');
+  const durationDisplay = document.getElementById('duration-display');
+  const recordingDuration = document.getElementById('recording-duration');
+  
+  const previewContainer = document.getElementById('preview-container');
+  const screenPreview = document.getElementById('screen-preview');
+  const recordingsList = document.getElementById('recordings-list');
+  
+  // --- STATE ---
+  let isStreamOn = false;
+  let isRecording = false;
+  let streamInterval = null;
+  let durationInterval = null;
+  let recordingStartTime = null;
+
+  // Cleanup Global cho Navigation bar
+  window.performScreenCleanup = function() {
+        if (isStreamOn) {
+            turnOffScreen(); 
+        }
+  };
+  
+  // --- UTILS ---
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+  
+  function updateDuration() {
+    if (!recordingStartTime) return;
+    const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+    const hours = Math.floor(elapsed / 3600);
+    const minutes = Math.floor((elapsed % 3600) / 60);
+    const seconds = elapsed % 60;
+    recordingDuration.textContent = 
+      `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  }
+
+  // --- ACTIONS ---
+  async function turnOnScreen() {
+    turnOnBtn.disabled = true; turnOnBtn.textContent = 'Connecting...';
+    try {
+      const res = await fetch(API.ON, { method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')} });
+      const data = await res.json();
+      if (data.success || data.message.includes('already')) {
+        isStreamOn = true;
+        streamStatus.textContent = '🟢 ON'; streamStatus.classList.add('text-green-600');
         
-        const feedImg = document.getElementById('screen-feed');
-        const placeholder = document.getElementById('placeholder-container');
-        const statusMsg = document.getElementById('status-msg');
-        const connectionBadge = document.getElementById('connection-status');
-        const listBody = document.getElementById('recording-list');
+        previewContainer.classList.remove('hidden');
+        startRecBtn.classList.remove('hidden');
+        
+        turnOffBtn.disabled = false; turnOffBtn.classList.remove('bg-gray-400', 'cursor-not-allowed'); turnOffBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+        startRecBtn.disabled = false; startRecBtn.classList.remove('bg-gray-400', 'cursor-not-allowed'); startRecBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+        
+        startStreaming();
+      } else { alert('Error: ' + data.message); }
+    } catch (e) { alert('Connection error'); }
+    finally { turnOnBtn.disabled = false; turnOnBtn.textContent = '▶ Start Stream'; }
+  }
+  
+  async function turnOffScreen() {
+    try {
+      if (isRecording) await stopRecording();
+      await fetch(API.OFF, { method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')} });
+      
+      isStreamOn = false;
+      streamStatus.textContent = '⚪ OFF'; streamStatus.classList.remove('text-green-600');
+      
+      previewContainer.classList.add('hidden');
+      startRecBtn.classList.add('hidden');
+      stopRecBtn.classList.add('hidden');
+      
+      turnOffBtn.disabled = true; turnOffBtn.classList.add('bg-gray-400', 'cursor-not-allowed'); turnOffBtn.classList.remove('bg-red-600');
+      stopStreaming();
+    } catch (e) { console.error(e); }
+  }
 
-        let streamInterval = null;
+  function startStreaming() {
+    if(streamInterval) clearInterval(streamInterval);
+    // Refresh ảnh mỗi 200ms (5 FPS) để đỡ lag mạng, vì ảnh màn hình nặng hơn webcam
+    streamInterval = setInterval(() => {
+        screenPreview.src = API.STREAM + "?t=" + new Date().getTime();
+    }, 200); 
+  }
+  
+  function stopStreaming() {
+    if (streamInterval) clearInterval(streamInterval);
+    screenPreview.src = '';
+  }
 
-        // --- INITIALIZATION ---
-        checkInitialStatus();
-        loadRecordings();
+  async function startRecording() {
+    startRecBtn.disabled = true;
+    try {
+      const res = await fetch(API.REC_START, { method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')} });
+      const data = await res.json();
+      if (data.success) {
+        isRecording = true;
+        recordingStatus.textContent = '🔴 RECORDING'; recordingStatus.classList.add('text-red-600');
+        durationDisplay.classList.remove('hidden');
+        recordingStartTime = Date.now();
+        durationInterval = setInterval(updateDuration, 1000);
+        
+        startRecBtn.classList.add('hidden');
+        stopRecBtn.classList.remove('hidden');
+        stopRecBtn.disabled = false; stopRecBtn.classList.remove('bg-gray-400'); stopRecBtn.classList.add('bg-red-600');
+      } else { alert(data.message); }
+    } catch (e) { alert('Error starting record'); }
+    finally { startRecBtn.disabled = false; }
+  }
 
-        // --- EVENT LISTENERS ---
+  async function stopRecording() {
+    stopRecBtn.disabled = true; stopRecBtn.textContent = 'Saving...';
+    try {
+      const res = await fetch(API.REC_STOP, { method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')} });
+      const data = await res.json();
+      if (data.success) {
+        isRecording = false;
+        recordingStatus.textContent = '⚪ STOPPED'; recordingStatus.classList.remove('text-red-600');
+        durationDisplay.classList.add('hidden');
+        if(durationInterval) clearInterval(durationInterval);
+        
+        stopRecBtn.classList.add('hidden');
+        startRecBtn.classList.remove('hidden');
+        
+        loadRecordingsList(); // Reload table
+        alert(`Saved: ${data.filename} (${data.file_size})`);
+      } else { alert(data.message); }
+    } catch (e) { alert('Error stopping record'); }
+    finally { stopRecBtn.disabled = false; stopRecBtn.textContent = '⏹ Stop Recording'; }
+  }
 
-        // 1. TURN ON
-        btnOn.onclick = function() {
-            setLoading(true);
-            updateStatus("Starting stream...", "text-info");
-            
-            fetch(API_ON, { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
-                        updateUI(true, false);
-                        updateStatus("Stream Active", "text-success");
-                    } else {
-                        updateStatus("Error: " + data.message, "text-danger");
-                        setLoading(false);
-                    }
-                })
-                .catch(() => { updateStatus("Connection Failed", "text-danger"); setLoading(false); });
-        };
+  // --- LIST ---
+  async function loadRecordingsList() {
+    try {
+      const res = await fetch(API.LIST);
+      const data = await res.json();
+      const listBody = document.getElementById('recordings-list'); // Đảm bảo ID này đúng với HTML
+      if (data.success && data.recordings.length > 0) {
+        listBody.innerHTML = data.recordings.map(rec => `
+          <tr>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">${rec.recorded_at}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${rec.filename}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${rec.duration}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${rec.file_size}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <a href="${rec.file_url}" target="_blank" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
+                <a href="${rec.file_url}" download class="text-green-600 hover:text-green-900 mr-3">Download</a>
+                
+                <button onclick="deleteRecording(${rec.id})" class="text-red-600 hover:text-red-900 font-bold">Delete</button>
+            </td>
+          </tr>
+        `).join('');
+      } else {
+        listBody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">No recordings yet.</td></tr>';
+      }
+    } catch (e) { console.error(e); }
+  }
 
-        // 2. TURN OFF
-        btnOff.onclick = function() {
-            setLoading(true);
-            stopStreamLoop(); // Stop fetching immediately
-            
-            fetch(API_OFF, { method: 'POST' })
-                .then(res => res.json())
-                .then(() => {
-                    updateUI(false, false);
-                    updateStatus("Stream Stopped", "text-secondary");
-                });
-        };
-
-        // 3. START RECORDING
-        btnStartRec.onclick = function() {
-            updateStatus("Starting recording...", "text-warning");
-            
-            fetch(API_REC_START, { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
-                        updateUI(true, true);
-                        updateStatus("Recording...", "text-danger font-weight-bold");
-                    } else {
-                        updateStatus("Rec Error: " + data.message, "text-danger");
-                    }
-                });
-        };
-
-        // 4. STOP RECORDING
-        btnStopRec.onclick = function() {
-            updateStatus("Saving video... Please wait...", "text-warning");
-            btnStopRec.disabled = true; // Prevent double click
-            
-            fetch(API_REC_STOP, { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
-                        updateUI(true, false);
-                        updateStatus("Saved: " + data.filename, "text-success");
-                        loadRecordings(); // Reload list
-                    } else {
-                        updateStatus("Save Error: " + data.message, "text-danger");
-                        btnStopRec.disabled = false;
-                    }
-                })
-                .catch(() => {
-                    updateStatus("Save Timeout (File might be large)", "text-danger");
-                    btnStopRec.disabled = false; 
-                });
-        };
-
-        // --- LOGIC FUNCTIONS ---
-
-        function checkInitialStatus() {
-            fetch(API_STATUS)
-                .then(res => res.json())
-                .then(data => {
-                    updateUI(data.stream_on, data.recording);
-                    connectionBadge.innerText = "Connected";
-                    connectionBadge.className = "badge badge-success shadow-sm";
-                })
-                .catch(() => {
-                    updateUI(false, false);
-                    connectionBadge.innerText = "Disconnected";
-                    connectionBadge.className = "badge badge-danger shadow-sm";
-                });
+  // 3. THÊM HÀM XỬ LÝ XÓA (EXPOSE RA GLOBAL WINDOW)
+  window.deleteRecording = async function(id) {
+    if (!confirm('Are you sure you want to delete this screen recording?')) return;
+    
+    try {
+      const response = await fetch(API.DELETE_BASE + id + '/', {
+        method: 'DELETE',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken') // Hàm getCookie đã có ở đoạn code trước
         }
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        // Xóa thành công thì load lại danh sách
+        loadRecordingsList();
+      } else {
+        alert("Delete failed: " + data.message);
+      }
+    } catch (error) {
+      alert("Error: " + error);
+    }
+  };
 
-        function updateUI(isStreamOn, isRecording) {
-            setLoading(false);
-
-            if (isStreamOn) {
-                // Show Feed
-                placeholder.style.display = 'none';
-                feedImg.style.display = 'block';
-                startStreamLoop();
-
-                // Buttons State
-                btnOn.style.display = 'none';
-                btnOff.style.display = 'inline-flex';
-
-                if (isRecording) {
-                    btnStartRec.style.display = 'none';
-                    btnStopRec.style.display = 'inline-flex';
-                    btnStopRec.disabled = false;
-                    
-                    // Visual cue for recording
-                    feedImg.style.border = "3px solid #e74a3b"; // Red border
-                } else {
-                    btnStartRec.style.display = 'inline-flex';
-                    btnStartRec.disabled = false;
-                    btnStopRec.style.display = 'none';
-                    
-                    feedImg.style.border = "none";
-                }
-            } else {
-                // Hide Feed
-                placeholder.style.display = 'block';
-                feedImg.style.display = 'none';
-                stopStreamLoop();
-
-                // Buttons State
-                btnOn.style.display = 'inline-flex';
-                btnOff.style.display = 'none';
-                btnStartRec.style.display = 'inline-flex';
-                btnStartRec.disabled = true;
-                btnStopRec.style.display = 'none';
-            }
-        }
-
-        // Tải danh sách file - Đã sửa nút Download
-        function loadRecordings() {
-            fetch(API_LIST)
-                .then(res => res.json())
-                .then(data => {
-                    listBody.innerHTML = "";
-                    if (data.success && data.recordings.length > 0) {
-                        data.recordings.forEach(rec => {
-                            // Tạo hàng (Row)
-                            const tr = document.createElement('tr');
-                            
-                            // Cột thông tin (Tên file, ngày giờ, dung lượng)
-                            const infoTd = `
-                                <td>
-                                    <div class="font-weight-bold text-primary text-truncate" style="max-width: 200px;" title="${rec.filename}">
-                                        ${rec.filename}
-                                    </div>
-                                    <div class="small text-gray-500">
-                                        <i class="far fa-clock"></i> ${rec.recorded_at} <br>
-                                        <i class="far fa-file-video"></i> ${rec.file_size} • ${rec.duration}
-                                    </div>
-                                </td>`;
-                            
-                            // Cột nút Download (Y chang Webcam)
-                            const actionTd = `
-                                <td class="align-middle text-center">
-                                    <a href="${rec.file_url}" target="_blank" class="btn btn-info btn-circle btn-sm" title="Download">
-                                        <i class="fas fa-download"></i>
-                                    </a>
-                                </td>`;
-                                
-                            tr.innerHTML = infoTd + actionTd;
-                            listBody.appendChild(tr);
-                        });
-                    } else {
-                        listBody.innerHTML = '<tr><td colspan="2" class="text-center small text-gray-500 py-3">No recordings found</td></tr>';
-                    }
-                });
-        }
-
-        function startStreamLoop() {
-            if (streamInterval) clearInterval(streamInterval);
-            streamInterval = setInterval(() => {
-                feedImg.src = API_STREAM + "?t=" + new Date().getTime();
-            }, 200); // 5 FPS
-        }
-
-        function stopStreamLoop() {
-            if (streamInterval) clearInterval(streamInterval);
-            feedImg.src = "";
-        }
-
-        // --- ĐOẠN CODE MỚI CẦN THÊM VÀO ĐÂY ---
-        // Expose hàm cleanup ra global window để thanh Navigation gọi được
-        window.performScreenCleanup = function() {
-            console.log("Disconnect detected -> Stopping Screen UI...");
-            
-            // 1. Dừng ngay lập tức việc tải ảnh
-            stopStreamLoop();
-            
-            // 2. Reset giao diện về trạng thái Offline
-            // Giả lập hành động bấm nút OFF
-            if (btnOff) btnOff.click(); 
-            
-            // Hoặc set cứng UI nếu cần:
-            if(placeholder) placeholder.style.display = 'block';
-            if(feedImg) feedImg.style.display = 'none';
-        };
-        // ----------------------------------------
-
-        function updateStatus(msg, cssClass) {
-            statusMsg.className = "mt-3 small font-italic " + cssClass;
-            statusMsg.innerText = msg;
-        }
-
-        function setLoading(isLoading) {
-            if (isLoading) {
-                btnOn.disabled = true;
-                btnOff.disabled = true;
-            } else {
-                btnOn.disabled = false;
-                btnOff.disabled = false;
-            }
-        }
-    });
+  // --- INIT ---
+  refreshListBtn.addEventListener('click', loadRecordingsList);
+  turnOnBtn.addEventListener('click', turnOnScreen);
+  turnOffBtn.addEventListener('click', turnOffScreen);
+  startRecBtn.addEventListener('click', startRecording);
+  stopRecBtn.addEventListener('click', stopRecording);
+  
+  loadRecordingsList();
+  
+  // Check Status Periodically
+  setInterval(async () => {
+      try {
+        const res = await fetch(API.STATUS);
+        const data = await res.json();
+        // Sync logic nếu state thay đổi từ bên ngoài (optional)
+      } catch (e) {}
+  }, 3000);
+});
 </script>
-
-<style>
-    /* CSS cho nút tròn (btn-circle) nếu theme chưa có */
-    .btn-circle {
-        border-radius: 100%;
-        height: 2.5rem;
-        width: 2.5rem;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .btn-circle.btn-sm {
-        height: 1.8rem;
-        width: 1.8rem;
-        font-size: 0.75rem;
-    }
-</style>
 {% endblock %}
