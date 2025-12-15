@@ -122,7 +122,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const previewContainer = document.getElementById('preview-container');
   const webcamPreview = document.getElementById('webcam-preview');
   const recordingsList = document.getElementById('recordings-list');
-  
+
   // ==================== STATE VARIABLES ====================
   let isCameraOn = false;
   let isRecording = false;
@@ -179,6 +179,12 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // ==================== CAMERA CONTROL ====================
   async function turnOnCamera() {
+    const activeStream = localStorage.getItem('ACTIVE_STREAM_MODE');
+    if (activeStream === 'SCREEN') {
+        alert("Cannot start Webcam: Screen Recorder is currently active! Please turn off Screen Recorder first.");
+        return;
+    }
+
     turnOnBtn.disabled = true;
     turnOnBtn.textContent = 'Turning On...';
     
@@ -195,6 +201,10 @@ document.addEventListener('DOMContentLoaded', function() {
       // Success hoặc camera đã bật rồi → Coi như thành công
       if (data.success || data.message.includes('already ON')) {
         isCameraOn = true;
+        
+        // --- SET GLOBAL LOCK ---
+        localStorage.setItem('ACTIVE_STREAM_MODE', 'WEBCAM');
+
         cameraStatus.textContent = '🟢 ON';
         cameraStatus.classList.add('text-green-600');
         
@@ -247,6 +257,11 @@ document.addEventListener('DOMContentLoaded', function() {
       
       if (data.success) {
         isCameraOn = false;
+
+        // --- REMOVE GLOBAL LOCK ---
+        localStorage.removeItem('ACTIVE_STREAM_MODE');
+
+
         cameraStatus.textContent = '⚪ OFF';
         cameraStatus.classList.remove('text-green-600');
         

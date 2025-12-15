@@ -65,22 +65,19 @@
   
   <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
     <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">📼 Recorded Screen Videos</h2>
-    
     <div class="overflow-x-auto">
       <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
         <thead class="bg-gray-50 dark:bg-gray-700">
           <tr>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date/Time</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filename</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date/Time</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Filename</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Size</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
           </tr>
         </thead>
         <tbody id="recordings-list" class="bg-white divide-y divide-gray-200 dark:bg-gray-800 dark:divide-gray-700">
-          <tr>
-            <td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">Loading...</td>
-          </tr>
+          <tr><td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">Loading...</td></tr>
         </tbody>
       </table>
     </div>
@@ -89,50 +86,31 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-  // --- CONFIG ---
-  // Định nghĩa các API endpoint tương ứng cho Screen
   const API = {
-    ON: '/remote/api/screen/on',
-    OFF: '/remote/api/screen/off',
-    STREAM: '/remote/api/screen/stream',
-    REC_START: '/remote/api/screen/record/start',
-    REC_STOP: '/remote/api/screen/record/stop',
-    LIST: '/remote/api/screen/list',
-    STATUS: '/remote/api/screen/status',
-    DELETE_BASE: '/remote/api/screen/delete/'
+    ON: '/remote/api/screen/on', OFF: '/remote/api/screen/off', STREAM: '/remote/api/screen/stream',
+    REC_START: '/remote/api/screen/record/start', REC_STOP: '/remote/api/screen/record/stop',
+    LIST: '/remote/api/screen/list', STATUS: '/remote/api/screen/status', DELETE_BASE: '/remote/api/screen/delete/'
   };
 
-  // --- DOM ELEMENTS ---
   const turnOnBtn = document.getElementById('turn-on-btn');
   const turnOffBtn = document.getElementById('turn-off-btn');
   const startRecBtn = document.getElementById('start-rec-btn');
   const stopRecBtn = document.getElementById('stop-rec-btn');
   const refreshListBtn = document.getElementById('refresh-list-btn');
-  
   const streamStatus = document.getElementById('stream-status');
   const recordingStatus = document.getElementById('recording-status');
   const durationDisplay = document.getElementById('duration-display');
   const recordingDuration = document.getElementById('recording-duration');
-  
   const previewContainer = document.getElementById('preview-container');
   const screenPreview = document.getElementById('screen-preview');
   const recordingsList = document.getElementById('recordings-list');
   
-  // --- STATE ---
   let isStreamOn = false;
   let isRecording = false;
   let streamInterval = null;
   let durationInterval = null;
   let recordingStartTime = null;
 
-  // Cleanup Global cho Navigation bar
-  window.performScreenCleanup = function() {
-        if (isStreamOn) {
-            turnOffScreen(); 
-        }
-  };
-  
-  // --- UTILS ---
   function getCookie(name) {
     let cookieValue = null;
     if (document.cookie && document.cookie !== '') {
@@ -140,8 +118,7 @@ document.addEventListener('DOMContentLoaded', function() {
       for (let i = 0; i < cookies.length; i++) {
         const cookie = cookies[i].trim();
         if (cookie.substring(0, name.length + 1) === (name + '=')) {
-          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-          break;
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1)); break;
         }
       }
     }
@@ -151,23 +128,32 @@ document.addEventListener('DOMContentLoaded', function() {
   function updateDuration() {
     if (!recordingStartTime) return;
     const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
-    const hours = Math.floor(elapsed / 3600);
-    const minutes = Math.floor((elapsed % 3600) / 60);
-    const seconds = elapsed % 60;
-    recordingDuration.textContent = 
-      `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    const h = Math.floor(elapsed / 3600);
+    const m = Math.floor((elapsed % 3600) / 60);
+    const s = elapsed % 60;
+    recordingDuration.textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   }
 
   // --- ACTIONS ---
   async function turnOnScreen() {
+    // 1. KIỂM TRA XEM WEBCAM CÓ ĐANG BẬT KHÔNG
+    const activeStream = localStorage.getItem('ACTIVE_STREAM_MODE');
+    if (activeStream === 'WEBCAM') {
+        alert("Cannot start Screen Stream: Webcam is currently active! Please turn off Webcam first.");
+        return;
+    }
+
     turnOnBtn.disabled = true; turnOnBtn.textContent = 'Connecting...';
     try {
       const res = await fetch(API.ON, { method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')} });
       const data = await res.json();
       if (data.success || data.message.includes('already')) {
         isStreamOn = true;
-        streamStatus.textContent = '🟢 ON'; streamStatus.classList.add('text-green-600');
         
+        // --- SET GLOBAL LOCK ---
+        localStorage.setItem('ACTIVE_STREAM_MODE', 'SCREEN');
+
+        streamStatus.textContent = '🟢 ON'; streamStatus.classList.add('text-green-600');
         previewContainer.classList.remove('hidden');
         startRecBtn.classList.remove('hidden');
         
@@ -175,6 +161,7 @@ document.addEventListener('DOMContentLoaded', function() {
         startRecBtn.disabled = false; startRecBtn.classList.remove('bg-gray-400', 'cursor-not-allowed'); startRecBtn.classList.add('bg-red-600', 'hover:bg-red-700');
         
         startStreaming();
+        alert("Screen Stream Started successfully!"); // <-- THÔNG BÁO THEO YÊU CẦU
       } else { alert('Error: ' + data.message); }
     } catch (e) { alert('Connection error'); }
     finally { turnOnBtn.disabled = false; turnOnBtn.textContent = '▶ Start Stream'; }
@@ -186,23 +173,24 @@ document.addEventListener('DOMContentLoaded', function() {
       await fetch(API.OFF, { method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')} });
       
       isStreamOn = false;
-      streamStatus.textContent = '⚪ OFF'; streamStatus.classList.remove('text-green-600');
       
+      // --- REMOVE GLOBAL LOCK ---
+      localStorage.removeItem('ACTIVE_STREAM_MODE');
+
+      streamStatus.textContent = '⚪ OFF'; streamStatus.classList.remove('text-green-600');
       previewContainer.classList.add('hidden');
       startRecBtn.classList.add('hidden');
       stopRecBtn.classList.add('hidden');
       
       turnOffBtn.disabled = true; turnOffBtn.classList.add('bg-gray-400', 'cursor-not-allowed'); turnOffBtn.classList.remove('bg-red-600');
       stopStreaming();
+      alert("Screen Stream Stopped."); // <-- THÔNG BÁO THEO YÊU CẦU
     } catch (e) { console.error(e); }
   }
 
   function startStreaming() {
     if(streamInterval) clearInterval(streamInterval);
-    // Refresh ảnh mỗi 200ms (5 FPS) để đỡ lag mạng, vì ảnh màn hình nặng hơn webcam
-    streamInterval = setInterval(() => {
-        screenPreview.src = API.STREAM + "?t=" + new Date().getTime();
-    }, 200); 
+    streamInterval = setInterval(() => { screenPreview.src = API.STREAM + "?t=" + new Date().getTime(); }, 200); 
   }
   
   function stopStreaming() {
@@ -223,8 +211,14 @@ document.addEventListener('DOMContentLoaded', function() {
         durationInterval = setInterval(updateDuration, 1000);
         
         startRecBtn.classList.add('hidden');
+        
         stopRecBtn.classList.remove('hidden');
-        stopRecBtn.disabled = false; stopRecBtn.classList.remove('bg-gray-400'); stopRecBtn.classList.add('bg-red-600');
+        stopRecBtn.disabled = false; 
+        // --- SỬA LỖI MŨI TÊN CHUỘT ---
+        // Xóa class 'cursor-not-allowed' để hiện bàn tay (mặc định của button nếu không disabled)
+        stopRecBtn.classList.remove('bg-gray-400', 'cursor-not-allowed'); 
+        stopRecBtn.classList.add('bg-red-600');
+        
       } else { alert(data.message); }
     } catch (e) { alert('Error starting record'); }
     finally { startRecBtn.disabled = false; }
@@ -244,66 +238,43 @@ document.addEventListener('DOMContentLoaded', function() {
         stopRecBtn.classList.add('hidden');
         startRecBtn.classList.remove('hidden');
         
-        loadRecordingsList(); // Reload table
+        loadRecordingsList();
         alert(`Saved: ${data.filename} (${data.file_size})`);
       } else { alert(data.message); }
     } catch (e) { alert('Error stopping record'); }
     finally { stopRecBtn.disabled = false; stopRecBtn.textContent = '⏹ Stop Recording'; }
   }
 
-  // --- LIST ---
   async function loadRecordingsList() {
     try {
       const res = await fetch(API.LIST);
       const data = await res.json();
-      const listBody = document.getElementById('recordings-list'); // Đảm bảo ID này đúng với HTML
       if (data.success && data.recordings.length > 0) {
-        listBody.innerHTML = data.recordings.map(rec => `
+        recordingsList.innerHTML = data.recordings.map(rec => `
           <tr>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">${rec.recorded_at}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${rec.filename}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${rec.duration}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${rec.file_size}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+            <td class="px-6 py-4 text-sm text-gray-900 dark:text-white">${rec.recorded_at}</td>
+            <td class="px-6 py-4 text-sm text-gray-500">${rec.filename}</td>
+            <td class="px-6 py-4 text-sm text-gray-500">${rec.duration}</td>
+            <td class="px-6 py-4 text-sm text-gray-500">${rec.file_size}</td>
+            <td class="px-6 py-4 text-sm font-medium">
                 <a href="${rec.file_url}" target="_blank" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
                 <a href="${rec.file_url}" download class="text-green-600 hover:text-green-900 mr-3">Download</a>
-                
                 <button onclick="deleteRecording(${rec.id})" class="text-red-600 hover:text-red-900 font-bold">Delete</button>
             </td>
-          </tr>
-        `).join('');
-      } else {
-        listBody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">No recordings yet.</td></tr>';
-      }
+          </tr>`).join('');
+      } else { recordingsList.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">No recordings yet.</td></tr>'; }
     } catch (e) { console.error(e); }
   }
 
-  // 3. THÊM HÀM XỬ LÝ XÓA (EXPOSE RA GLOBAL WINDOW)
   window.deleteRecording = async function(id) {
-    if (!confirm('Are you sure you want to delete this screen recording?')) return;
-    
+    if (!confirm('Are you sure you want to delete this recording?')) return;
     try {
-      const response = await fetch(API.DELETE_BASE + id + '/', {
-        method: 'DELETE',
-        headers: {
-          'X-CSRFToken': getCookie('csrftoken') // Hàm getCookie đã có ở đoạn code trước
-        }
-      });
-      
+      const response = await fetch(API.DELETE_BASE + id + '/', { method: 'DELETE', headers: {'X-CSRFToken': getCookie('csrftoken')} });
       const data = await response.json();
-      
-      if (data.success) {
-        // Xóa thành công thì load lại danh sách
-        loadRecordingsList();
-      } else {
-        alert("Delete failed: " + data.message);
-      }
-    } catch (error) {
-      alert("Error: " + error);
-    }
+      if (data.success) loadRecordingsList(); else alert("Delete failed: " + data.message);
+    } catch (error) { alert("Error: " + error); }
   };
 
-  // --- INIT ---
   refreshListBtn.addEventListener('click', loadRecordingsList);
   turnOnBtn.addEventListener('click', turnOnScreen);
   turnOffBtn.addEventListener('click', turnOffScreen);
@@ -312,14 +283,8 @@ document.addEventListener('DOMContentLoaded', function() {
   
   loadRecordingsList();
   
-  // Check Status Periodically
-  setInterval(async () => {
-      try {
-        const res = await fetch(API.STATUS);
-        const data = await res.json();
-        // Sync logic nếu state thay đổi từ bên ngoài (optional)
-      } catch (e) {}
-  }, 3000);
+  // Clean up lock if page is reloaded abruptly (Optional safety)
+  // window.addEventListener('beforeunload', () => { /* Không xóa ở đây, vì navigation sẽ reload trang */ });
 });
 </script>
 {% endblock %}
