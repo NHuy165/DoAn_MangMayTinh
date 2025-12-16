@@ -1,7 +1,7 @@
-# Hướng dẫn đồ án RAT Client-Server
+# Webcam
 
-**Exported:** 12/9/2025 14:21:11  
-**Link:** [https://gemini.google.com/app/e0e207ecf507f709](https://gemini.google.com/app/e0e207ecf507f709)
+**Nội dung:** Thêm tính năng webcam cho ứng dụng web.  
+**Assistant:** Gemini
 
 ## Prompt:
 > Keylog - CS
