@@ -65,7 +65,21 @@
         if (res.status === 'success') {
             result.className = 'mt-4 text-sm text-center p-3 rounded bg-green-200 dark:bg-green-700 text-green-900 dark:text-green-100';
             result.innerHTML = `✅ ${res.message || 'Lệnh shutdown đã được gửi thành công'}`;
-        } else {
+
+            // === [THÊM MỚI] KIỂM TRA CỜ DISCONNECT ===
+            if (res.disconnected === true) {
+                result.innerHTML += '<br>🔌 Đang ngắt kết nối giao diện...';
+                
+                // Đợi 1.5 giây để người dùng đọc thông báo rồi mới reset
+                setTimeout(() => {
+                    if (window.handleClientDisconnect) {
+                        window.handleClientDisconnect();
+                    }
+                }, 1500);
+            }
+        } 
+        
+        else {
             result.className = 'mt-4 text-sm text-center p-3 rounded bg-red-200 dark:bg-red-700 text-red-900 dark:text-red-100';
             result.innerHTML = `❌ ${res.message || 'Lỗi khi gửi lệnh shutdown'}`;
         }
@@ -87,7 +101,20 @@
         if (res.status === 'success') {
             result.className = 'mt-4 text-sm text-center p-3 rounded bg-green-200 dark:bg-green-700 text-green-900 dark:text-green-100';
             result.innerHTML = `✅ ${res.message || 'Lệnh restart đã được gửi thành công'}`;
-        } else {
+
+            // === [THÊM MỚI] KIỂM TRA CỜ DISCONNECT ===
+            if (res.disconnected === true) {
+                result.innerHTML += '<br>🔌 Đang ngắt kết nối giao diện...';
+                
+                // Đợi 1.5 giây để người dùng đọc thông báo rồi mới reset
+                setTimeout(() => {
+                    if (window.handleClientDisconnect) {
+                        window.handleClientDisconnect();
+                    }
+                }, 1500);
+            }
+        } 
+        else {
             result.className = 'mt-4 text-sm text-center p-3 rounded bg-red-200 dark:bg-red-700 text-red-900 dark:text-red-100';
             result.innerHTML = `❌ ${res.message || 'Lỗi khi gửi lệnh restart'}`;
         }

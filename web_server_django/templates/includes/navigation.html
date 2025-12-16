@@ -348,26 +348,54 @@
     
     // Disconnect from server
     // ==================== LOGIC DISCONNECT MỚI ====================
+    // Hàm này được gán vào window để các trang khác (như Power) có thể gọi được
+    window.handleClientDisconnect = function() {
+        console.log('🔌 Performing UI Disconnect...');
+        
+        // 1. Xóa dữ liệu trong localStorage
+        localStorage.removeItem('connectedServer');
+        localStorage.removeItem('connectionTime');
+        localStorage.removeItem('ACTIVE_STREAM_MODE'); // Xóa cờ đang stream nếu có
+        sessionStorage.clear();
+
+        // 2. Cập nhật giao diện nút bấm
+        if (connectBtn && disconnectBtn && serverSelect) {
+            // Reset Select Box
+            serverSelect.innerHTML = '<option value="" disabled selected>Select Server</option>';
+            
+            // Hiện nút Connect, ẩn nút Disconnect
+            connectBtn.classList.remove('hidden', 'bg-green-600', 'dark:bg-green-500');
+            connectBtn.classList.add('bg-primary-700', 'dark:bg-primary-600');
+            connectBtn.textContent = 'Connect';
+            disconnectBtn.classList.add('hidden');
+            
+            // Enable lại nút Connect (đề phòng đang bị disable)
+            connectBtn.disabled = false;
+        }
+
+        // 3. (Tùy chọn) Reload lại trang Home để reset sạch sẽ các view
+        // Nếu đang dùng HTMX
+        if (typeof htmx !== 'undefined') {
+             htmx.ajax('GET', '/remote/home/', '#main-content');
+        }
+    };
+    
+    
     if (disconnectBtn) {
       disconnectBtn.addEventListener('click', async function() {
         
-        // 1. KIỂM TRA XEM CÓ STREAM NÀO ĐANG CHẠY KHÔNG?
+        // Check Stream (Giữ nguyên logic bảo vệ cũ của bạn)
         const activeStream = localStorage.getItem('ACTIVE_STREAM_MODE');
-        
         if (activeStream) {
-            // NẾU CÓ: CẤM NGẮT KẾT NỐI VÀ KHÔNG LÀM GÌ CẢ
-            showNotification(
-              "warning",
-              `⚠️ ${activeStream} is currently active!<br><br>You CANNOT disconnect while streaming or recording.<br>Please go to the <b>${activeStream}</b> page and turn it OFF first.`
-            );
-            return; // Dừng ngay lập tức, không chạy code bên dưới
+            showNotification("warning", `⚠️ Cannot disconnect while ${activeStream} is active.`);
+            return;
         }
         
-        // 2. NẾU KHÔNG CÓ GÌ CHẠY -> TIẾN HÀNH NGẮT KẾT NỐI BÌNH THƯỜNG
         disconnectBtn.disabled = true;
         disconnectBtn.textContent = 'Disconnecting...';
         
         try {
+          // Gọi API báo Server Python ngắt socket
           const response = await fetch('/remote/api/disconnect-server/', {
             method: 'POST',
             headers: {
@@ -379,33 +407,19 @@
           const data = await response.json();
           
           if (data.success) {
-            // THÔNG BÁO THÀNH CÔNG
-            showNotification("success", "🔌 Successfully disconnected from server.");
+            showNotification("success", "🔌 Disconnected successfully.");
             
-            localStorage.removeItem('connectedServer');
-            localStorage.removeItem('connectionTime');
-            // Đảm bảo xóa luôn cờ Active Stream cho chắc chắn
-            localStorage.removeItem('ACTIVE_STREAM_MODE'); 
+            // GỌI HÀM DỌN DẸP GIAO DIỆN VỪA TẠO
+            window.handleClientDisconnect();
             
-            console.log('🔌 Disconnected');
-            
-            sessionStorage.clear();
-            availableServers = [];
-            
-            serverSelect.innerHTML = '<option value="" disabled selected>Select Server</option>';
-            connectBtn.classList.remove('hidden', 'bg-green-600', 'dark:bg-green-500');
-            connectBtn.classList.add('bg-primary-700', 'dark:bg-primary-600');
-            connectBtn.textContent = 'Connect';
-            disconnectBtn.classList.add('hidden');
-            
-            // Chuyển về trang chủ để reset sạch sẽ (Khuyên dùng)
-            htmx.ajax('GET', '/remote/home/', '#main-content');
           } else {
             showNotification("error", data.message || 'Failed to disconnect.');
+            // Nếu lỗi API, vẫn trả lại trạng thái nút bấm
+            disconnectBtn.disabled = false;
+            disconnectBtn.textContent = 'Disconnect';
           }
         } catch (error) {
           showNotification("error", 'Disconnect error: ' + error.message);
-        } finally {
           disconnectBtn.disabled = false;
           disconnectBtn.textContent = 'Disconnect';
         }
