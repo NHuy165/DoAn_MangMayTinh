@@ -93,15 +93,15 @@
 
         function appendToTerminal(text, type = 'output') {
             const div = document.createElement('div');
-            div.className = 'whitespace-pre-wrap mb-1';
+            div.className = 'font-bold p-2 text-sm text-left text-gray-500 dark:text-gray-400';
             
             if (type === 'command') {
-                div.className += 'font-bold p-4 text-left text-gray-500 dark:text-white-400';
+                div.className += 'font-bold p-2 text-sm text-left text-gray-500 dark:text-gray-400';
                 // Nếu chưa có path (lần đầu) thì hiện dấu nhắc mặc định
                 const displayPrompt = currentPath || "Remote>";
                 div.textContent = `${displayPrompt} ${text}`;
             } else if (type === 'error') {
-                div.className += ' p-2 text-sm text-left text-red-500 dark:text-red-400';
+                div.className += ' p-2 text-sm text-left text-gray-500 dark:text-gray-400';
                 div.textContent = text;
             } else {
                 div.textContent = text;

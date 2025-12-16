@@ -21,8 +21,13 @@ from django.conf.urls.static import static
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
 from django.views.static import serve 
+from django.shortcuts import redirect
+
+def root_redirect(request):
+    return redirect("/remote/home/")
 
 urlpatterns = [
+    path("", root_redirect),
     path("", include("apps.pages.urls")),
     path("", include("apps.dyn_dt.urls")),
     path("", include("apps.dyn_api.urls")),

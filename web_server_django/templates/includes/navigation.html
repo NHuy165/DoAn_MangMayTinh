@@ -19,7 +19,11 @@
                 clip-rule="evenodd"></path>
             </svg>
           </button>
-          <a hx-get="/remote/home/" class="flex ml-2 md:mr-24">
+          <a hx-get="/remote/home/"
+              hx-target="#main-content"
+              hx-swap="innerHTML"
+              hx-push-url="true"
+              class="flex ml-2 md:mr-24 cursor-pointer">
             <img src="https://flowbite-admin-dashboard.vercel.app/images/logo.svg" class="h-8 mr-3"
               alt="FlowBite Logo" />
             <span

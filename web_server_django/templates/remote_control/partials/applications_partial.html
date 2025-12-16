@@ -6,7 +6,6 @@
             <div class="flex items-center justify-between mb-4">
                 <div class="flex-shrink-0">
                     <h3 class="mb-2 text-xl font-bold text-gray-900 dark:text-white">Running Applications</h3>
-                    <span class="text-base font-normal text-gray-500 dark:text-gray-400">Applications currently active on target machine</span>
                 </div>
                 <div class="flex items-center">
                     <button onclick="loadApplications()" 
@@ -56,7 +55,6 @@
             <div class="items-center justify-between mb-4 lg:flex">
                 <div class="mb-4 lg:mb-0">
                     <h3 class="mb-2 text-xl font-bold text-gray-900 dark:text-white">Available Applications</h3>
-                    <span class="text-base font-normal text-gray-500 dark:text-gray-400">Installed applications not currently running</span>
                 </div>
                 <div class="flex items-center space-x-2">
                     <input type="text" id="searchApp" 
@@ -207,10 +205,10 @@
         const res = await apiCall('/remote/api/process/start/', 'POST', {name: appName});
         
         if (res.status === 'success') {
-            showAlert(res.message || 'Application started successfully');
+            showNotification("success", res.message || 'Application started successfully');
             setTimeout(() => loadApplications(), 1500);
         } else {
-            showAlert(res.message || 'Failed to start application');
+            showNotification("error", res.message || 'Failed to start application');
         }
     }
 
@@ -218,7 +216,7 @@
     async function startNewApp() {
         const name = document.getElementById('searchApp').value.trim();
         if (!name) {
-            showAlert('Please enter application name');
+            showNotification("error", 'Please enter application name');
             return;
         }
         
@@ -235,10 +233,10 @@
         const res = await apiCall('/remote/api/app/kill/', 'POST', {id: id});
         
         if (res.status === 'success') {
-            showAlert(res.message || 'Application stopped successfully');
+            showNotification("success", res.message || 'Application stopped successfully');
             setTimeout(() => loadApplications(), 1000);
         } else {
-            showAlert(res.message || 'Failed to stop application');
+            showNotification("error", res.message || 'Failed to stop application');
         }
     }
 
@@ -270,8 +268,4 @@
         }
     }
 
-    // Show alert helper
-    function showAlert(message, type = 'info') {
-        alert(message);
-    }
 </script>

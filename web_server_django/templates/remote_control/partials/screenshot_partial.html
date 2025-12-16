@@ -83,7 +83,7 @@
             tipMessage.classList.remove('hidden');
         } else {
             // Show error and empty state again
-            showAlert('Lỗi chụp màn hình: ' + (res.message || 'Unknown error'));
+            showNotification("error", 'Lỗi chụp màn hình: ' + (res.message || 'Unknown error'));
             emptyState.classList.remove('hidden');
         }
     }
@@ -105,10 +105,5 @@
             console.error(err);
             return { status: 'error', message: 'Connection Error' };
         }
-    }
-
-    // Show alert helper
-    function showAlert(message, type = 'info') {
-        alert(message);
     }
 </script>
