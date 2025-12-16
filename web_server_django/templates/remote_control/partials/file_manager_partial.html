@@ -93,8 +93,15 @@
 
   // QUAN TRỌNG: Chỉ chạy script khi Python báo đã kết nối
   {% if is_connected %}
-      document.addEventListener('htmx:afterSwap', function () {
-        loadDrives();
+      // Run immediately for normal page loads
+      loadDrives(); 
+      
+      // Optional: Keep this if you also use HTMX navigation
+      document.body.addEventListener('htmx:afterSwap', function (evt) {
+         // Check if the swapped content actually contains our file manager
+         if (document.getElementById("drives-container")) {
+            loadDrives();
+         }
       });
   {% endif %}
 
