@@ -8,7 +8,7 @@ app_name = 'remote_control'
 
 urlpatterns = [
     # Trang chủ Remote Control Dashboard
-    path('', views.index, name='index'),
+    path('home/', views.home_page, name='home'),
     
     # ==================== APPLICATION PAGES ====================
     path('applications/', views.applications_page, name='applications'),

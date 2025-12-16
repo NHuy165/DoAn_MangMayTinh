@@ -84,6 +84,12 @@ def server_info(request):
     start_time = getattr(PersistentRemoteClient, '_server_start_time', 0)
     return JsonResponse({"start_time": start_time})
 
+# ==================== HOME PAGE ====================
+def home_page(request):
+    """Trang chủ Remote Control Dashboard - Tổng quan"""
+    if request.headers.get("HX-Request"):
+        return render(request, 'remote_control/partials/home_partial.html')
+    return render(request, 'remote_control/home.html')
 
 # ==================== APPLICATION PAGES ====================
 
@@ -132,6 +138,29 @@ def shell_page(request):
     if request.headers.get('HX-Request'):
         return render(request, 'remote_control/partials/shell_partial.html')
     return render(request, 'remote_control/shell.html')
+
+# @require_http_methods(["GET"])
+def file_manager_page(request):
+    """
+    Trang File Manager - Tối giản
+    Vẫn giữ logic kiểm tra kết nối để chặn truy cập trái phép.
+    """
+    server_ip = request.session.get('target_server_ip')
+    client = _get_client(request)
+    
+    # Logic kiểm tra chặt chẽ: Phải có Session và Socket đang sống
+    is_connected = False
+    if server_ip and client and client.connected:
+        is_connected = True
+    
+    # Chỉ truyền biến này để quyết định có hiện bảng file hay không
+    context = {
+        'is_connected': is_connected
+    }
+
+    if request.headers.get('HX-Request'):
+        return render(request, 'remote_control/partials/file_manager_partial.html', context)
+    return render(request, 'remote_control/file_manager.html', context)
 
 # ==================== UDP DISCOVERY API ====================
 
@@ -919,25 +948,6 @@ def screen_delete(request, recording_id):
     
 # ==================== FILE MANAGER STRICT MODE ====================
 
-@require_http_methods(["GET"])
-def file_manager_page(request):
-    """
-    Trang File Manager - Tối giản
-    Vẫn giữ logic kiểm tra kết nối để chặn truy cập trái phép.
-    """
-    server_ip = request.session.get('target_server_ip')
-    client = _get_client(request)
-    
-    # Logic kiểm tra chặt chẽ: Phải có Session và Socket đang sống
-    is_connected = False
-    if server_ip and client and client.connected:
-        is_connected = True
-    
-    # Chỉ truyền biến này để quyết định có hiện bảng file hay không
-    context = {
-        'is_connected': is_connected
-    }
-    return render(request, 'remote_control/file_manager.html', context)
 
 
 # --- CÁC API BÊN DƯỚI DÙNG CHO JAVASCRIPT ---

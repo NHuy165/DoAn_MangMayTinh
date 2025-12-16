@@ -356,7 +356,10 @@
         
         if (activeStream) {
             // NẾU CÓ: CẤM NGẮT KẾT NỐI VÀ KHÔNG LÀM GÌ CẢ
-            alert(`⚠️ WARNING: ${activeStream} is currently active!\n\nYou generally CANNOT disconnect while streaming or recording.\nPlease go to the ${activeStream} page and turn it OFF first.`);
+            showNotification(
+              "warning",
+              `⚠️ ${activeStream} is currently active!<br><br>You CANNOT disconnect while streaming or recording.<br>Please go to the <b>${activeStream}</b> page and turn it OFF first.`
+            );
             return; // Dừng ngay lập tức, không chạy code bên dưới
         }
         
@@ -376,8 +379,8 @@
           const data = await response.json();
           
           if (data.success) {
-            // Xử lý UI disconnect như cũ
-            alert('Disconnected from server'); // Hoặc dùng showNotification nếu muốn
+            // THÔNG BÁO THÀNH CÔNG
+            showNotification("success", "🔌 Successfully disconnected from server.");
             
             localStorage.removeItem('connectedServer');
             localStorage.removeItem('connectionTime');
@@ -396,12 +399,12 @@
             disconnectBtn.classList.add('hidden');
             
             // Chuyển về trang chủ để reset sạch sẽ (Khuyên dùng)
-            window.location.href = "/"; 
+            htmx.ajax('GET', '/remote/home/', '#main-content');
           } else {
-            alert(data.message || 'Failed to disconnect');
+            showNotification("error", data.message || 'Failed to disconnect.');
           }
         } catch (error) {
-          alert('Disconnect error: ' + error.message);
+          showNotification("error", 'Disconnect error: ' + error.message);
         } finally {
           disconnectBtn.disabled = false;
           disconnectBtn.textContent = 'Disconnect';
@@ -432,17 +435,6 @@
         }
       }
       return cookieValue;
-    }
-
-    toastr.options = {
-      positionClass: "toast-bottom-right",
-      timeOut: 3000,
-      closeButton: true,
-      progressBar: true,
-    };
-
-    function showNotification(type, message) {
-      toastr[type](message);
     }
     
 
