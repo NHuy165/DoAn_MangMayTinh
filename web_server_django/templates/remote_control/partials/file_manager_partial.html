@@ -1,0 +1,224 @@
+<main data-page="file_manager" class="px-4 pt-6">
+
+    <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm dark:border-gray-700 dark:bg-gray-800">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-xl font-bold text-gray-900 dark:text-white">Remote File Manager</h3>
+
+            {% if is_connected %}
+            <span class="px-3 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full 
+                        dark:bg-green-900 dark:text-green-300">
+                Connected
+            </span>
+            {% else %}
+            <span class="px-3 py-1 text-xs font-medium text-red-800 bg-red-100 rounded-full 
+                        dark:bg-red-900 dark:text-red-300">
+                Disconnected
+            </span>
+            {% endif %}
+        </div>
+
+        {% if is_connected %}
+
+        <!-- Drives -->
+        <div class="mb-6">
+            <h4 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-3">Drives</h4>
+
+            <div id="drives-container" class="flex flex-wrap gap-2">
+                <button class="px-3 py-1 text-sm rounded bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+                        disabled>
+                        Loading...
+                </button>
+            </div>
+        </div>
+
+        <!-- File List -->
+        <div class="border border-gray-300 dark:border-gray-700 rounded-lg overflow-hidden">
+
+            <!-- Path -->
+            <div class="flex justify-between items-center p-3 bg-gray-100 dark:bg-gray-900 border-b 
+                        border-gray-300 dark:border-gray-700">
+                <h5 id="current-path-label"
+                    class="text-sm font-semibold text-blue-700 dark:text-blue-300">
+                    Path: ...
+                </h5>
+
+                <button onclick="goUp()" 
+                    class="px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded 
+                           hover:bg-gray-300 dark:hover:bg-gray-600 transition">
+                    ⬆ Up Level
+                </button>
+            </div>
+
+            <!-- Table -->
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm text-left text-gray-700 dark:text-gray-200">
+                    <thead class="text-xs uppercase bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                        <tr>
+                            <th class="px-4 py-2">Type</th>
+                            <th class="px-4 py-2">Name</th>
+                            <th class="px-4 py-2">Size</th>
+                            <th class="px-4 py-2">Action</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="file-list-body" class="divide-y divide-gray-200 dark:divide-gray-700">
+                        <tr>
+                            <td colspan="4" class="text-center py-6 text-gray-400 dark:text-gray-500">
+                                Select a drive...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+        </div>
+
+        {% else %}
+        <!-- Not connected -->
+        <div class="text-center text-gray-500 dark:text-gray-400 mt-10 text-sm">
+            Please select a Server to view file system.
+        </div>
+        {% endif %}
+        
+        {% csrf_token %}
+    </div>
+</main>
+
+
+
+<script>
+  let currentPath = "";
+
+  // QUAN TRỌNG: Chỉ chạy script khi Python báo đã kết nối
+  {% if is_connected %}
+      document.addEventListener('htmx:afterSwap', function () {
+        loadDrives();
+      });
+  {% endif %}
+
+  function loadDrives() {
+    fetch("/remote/api/file/drives/")
+      .then((response) => response.json())
+      .then((data) => {
+        const container = document.getElementById("drives-container");
+        if (!container) return;
+        container.innerHTML = "";
+
+        if (data.success && data.drives) {
+          data.drives.forEach((drive) => {
+            const btn = document.createElement("button");
+            btn.className = "px-3 py-1 text-sm rounded border border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white transition";
+            btn.innerHTML = `<i class="fas fa-hdd"></i> ${drive.path}`; // Bỏ phần info rườm rà nếu muốn
+            btn.onclick = () => loadDirectory(drive.path);
+            container.appendChild(btn);
+          });
+        }
+      })
+      .catch(err => console.error(err));
+  }
+
+  function loadDirectory(path) {
+    currentPath = path;
+    const label = document.getElementById("current-path-label");
+    const tbody = document.getElementById("file-list-body");
+
+    if(label) label.innerText = "Path: " + path;
+    if(tbody) tbody.innerHTML = '<tr><td colspan="4" class="text-center">Loading...</td></tr>';
+
+    fetch("/remote/api/file/list/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value,
+      },
+      body: JSON.stringify({ path: path }),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if(!tbody) return;
+        tbody.innerHTML = "";
+
+        if (data.success && data.items) {
+          if (data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Empty Folder</td></tr>';
+            return;
+          }
+
+          data.items.forEach((item) => {
+            const tr = document.createElement("tr");
+            let icon = item.type === "DIR" ? "📁" : "📄";
+            // Xử lý path an toàn
+            let safePath = currentPath.replace(/\\/g,"\\\\") + "\\\\" + item.name;
+
+            let nameHtml = item.type === "DIR"
+                ? `<a href="#" onclick="loadDirectory('${safePath}'); return false;" class="fw-bold text-decoration-none text-dark">${item.name}</a>`
+                : item.name;
+
+            let safeName = item.name.replace(/'/g, "\\'");
+            let actionBtn = "";
+            if (item.type === "FILE") {
+              actionBtn = `<button class="btn btn-xs btn-success me-1" onclick="downloadFile('${safeName}')">⬇</button>`;
+            }
+            actionBtn += `<button class="btn btn-xs btn-danger" onclick="deleteItem('${safeName}')">🗑</button>`;
+
+            tr.innerHTML = `<td>${icon}</td><td>${nameHtml}</td><td>${item.size}</td><td>${actionBtn}</td>`;
+            tbody.appendChild(tr);
+          });
+        }
+      });
+  }
+
+  function goUp() {
+    if (!currentPath || currentPath.length <= 3) return;
+    let parts = currentPath.split("\\");
+    parts.pop();
+    if (parts.length === 1 && parts[0].includes(":")) parts[0] += "\\";
+    loadDirectory(parts.join("\\"));
+  }
+
+  function downloadFile(filename) {
+    const fullPath = currentPath + "\\" + filename;
+    fetch("/remote/api/file/download/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value,
+      },
+      body: JSON.stringify({ path: fullPath }),
+    })
+      .then((response) => {
+        if (response.ok) return response.blob();
+        throw new Error("Failed");
+      })
+      .then((blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.style.display = "none";
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+      })
+      .catch((err) => alert(err));
+  }
+
+  function deleteItem(name) {
+    if (!confirm("Delete " + name + "?")) return;
+    const fullPath = currentPath + "\\" + name;
+    fetch("/remote/api/file/delete/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value,
+      },
+      body: JSON.stringify({ path: fullPath }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) loadDirectory(currentPath);
+      });
+  }
+</script>

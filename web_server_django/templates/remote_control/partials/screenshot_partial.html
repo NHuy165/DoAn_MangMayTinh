@@ -1,0 +1,114 @@
+<main data-page="screenshot">
+    <div class="px-4 pt-6">
+        <!-- Screenshot Viewer -->
+        <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm dark:border-gray-700 sm:p-6 dark:bg-gray-800">
+            <div class="items-center justify-between mb-4 lg:flex">
+                <div class="mb-4 lg:mb-0">
+                    <h3 class="mb-2 text-xl font-bold text-gray-900 dark:text-white">Screenshot</h3>
+                    <span class="text-base font-normal text-gray-500 dark:text-gray-400">Capture screen from target machine</span>
+                </div>
+                <div class="flex items-center">
+                    <button onclick="takeScreenshot()" 
+                        class="inline-flex items-center px-3 py-2 text-sm font-medium text-center text-gray-800 dark:text-white rounded-lg bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 dark:focus:ring-blue-800 transition-colors">
+                        <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                            <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"></path>
+                        </svg>
+                        Capture Screenshot
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Screenshot Display Area -->
+            <div class="flex flex-col mt-6">
+                <div class="relative min-h-[400px] rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 overflow-hidden flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+                    
+                    <!-- Empty State -->
+                    <div id="emptyState" class="text-center p-8">
+                        <svg class="w-16 h-16 mx-auto mb-4 text-gray-400 dark:text-gray-600" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                            <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"></path>
+                        </svg>
+                        <p class="text-gray-500 dark:text-gray-400">No screenshot yet</p>
+                        <p class="text-sm text-gray-400 dark:text-gray-500 mt-2">Click "Capture Screenshot" button to take a screenshot</p>
+                    </div>
+                    
+                    <!-- Loading State -->
+                    <div id="loadingState" class="hidden absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-900 bg-opacity-90">
+                        <div class="text-center">
+                            <svg class="animate-spin h-12 w-12 text-blue-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <p class="text-gray-600 dark:text-gray-400">Capturing screenshot...</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Screenshot Image -->
+                    <img id="screenshotImage" src="" alt="Screenshot" class="hidden w-auto h-auto max-w-screen max-h-screen object-contain border border-gray-300 rounded">
+                </div>
+                
+                <!-- Tip Message -->
+                <div id="tipMessage" class="hidden mt-4 p-3 bg-blue-50 dark:bg-blue-900 rounded-lg">
+                    <p class="text-sm text-blue-800 dark:text-blue-200">
+                        <strong>Tip:</strong> Right-click on the image → "Save image as..." to download
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+
+<script>
+    async function takeScreenshot() {
+        const emptyState = document.getElementById('emptyState');
+        const loadingState = document.getElementById('loadingState');
+        const img = document.getElementById('screenshotImage');
+        const tipMessage = document.getElementById('tipMessage');
+
+        // Show loading, hide empty state and image
+        emptyState.classList.add('hidden');
+        loadingState.classList.remove('hidden');
+        img.classList.add('hidden');
+        tipMessage.classList.add('hidden');
+
+        const res = await apiCall('/remote/api/screenshot/');
+        
+        // Hide loading
+        loadingState.classList.add('hidden');
+
+        if (res.status === 'success' && res.data) {
+            // Show screenshot - PNG format từ C# server
+            img.src = "data:image/png;base64," + res.data;
+            img.classList.remove('hidden');
+            tipMessage.classList.remove('hidden');
+        } else {
+            // Show error and empty state again
+            showAlert('Lỗi chụp màn hình: ' + (res.message || 'Unknown error'));
+            emptyState.classList.remove('hidden');
+        }
+    }
+</script>
+
+<script>
+    // Common API call function
+    async function apiCall(url, method='GET', body=null) {
+        const options = { 
+            method: method, 
+            headers: {'Content-Type': 'application/json'} 
+        };
+        if (body) options.body = JSON.stringify(body);
+        
+        try {
+            const res = await fetch(url, options);
+            return await res.json();
+        } catch (err) {
+            console.error(err);
+            return { status: 'error', message: 'Connection Error' };
+        }
+    }
+
+    // Show alert helper
+    function showAlert(message, type = 'info') {
+        alert(message);
+    }
+</script>

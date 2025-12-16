@@ -1,0 +1,408 @@
+<!-- Main Content -->
+<main data-page="screen">
+    <div class="px-4 pt-6">
+        <div class="grid gap-4 xl:grid-cols-1 2xl:grid-cols-2">
+            <!-- Screen Controls -->
+            <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm 2xl:col-span-2 dark:border-gray-700 sm:p-6 dark:bg-gray-800">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Screen Controls</h2>
+
+                <!-- Status Display -->
+                <div class="mb-4">
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Screen:</span>
+                    <span id="stream-status" class="text-sm font-semibold text-gray-500 dark:text-gray-400">⚪ OFF</span>
+                    </div>
+                    <div class="flex items-center">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Recording:</span>
+                    <span id="recording-status" class="text-sm font-semibold text-gray-500 dark:text-gray-400">⚪ STOPPED</span>
+                    </div>
+                    <div id="duration-display" class="flex items-center hidden">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Duration:</span>
+                    <span id="recording-duration" class="text-sm font-semibold text-red-600 dark:text-red-400">00:00:00</span>
+                    </div>
+                </div>
+                </div>
+
+                <!-- Control Buttons -->
+                <div class="flex space-x-3">
+                <button id="turn-on-btn" type="button" class="text-gray-800 dark:text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-green-500 dark:hover:bg-green-600 focus:outline-none dark:focus:ring-green-800">
+                    🖥 Turn On Screen
+                </button>
+                <button id="turn-off-btn" type="button" disabled class="text-gray-800 dark:text-white bg-gray-400 font-medium rounded-lg text-sm px-5 py-2.5 cursor-not-allowed">
+                    ⏹ Turn Off Screen
+                </button>
+                <button id="start-rec-btn" type="button" disabled class="text-gray-800 dark:text-white bg-gray-400 font-medium rounded-lg text-sm px-5 py-2.5 cursor-not-allowed hidden">
+                    🔴 Start Recording
+                </button>
+                <button id="stop-rec-btn" type="button" disabled class="text-gray-800 dark:text-white bg-gray-400 font-medium rounded-lg text-sm px-5 py-2.5 cursor-not-allowed hidden">
+                    ⏹ Stop Recording
+                </button>
+                <button id="refresh-list-btn" type="button" class="text-gray-900 bg-white border border-gray-300 hover:bg-gray-100 focus:ring-4 focus:ring-gray-200 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:bg-gray-700 dark:hover:border-gray-600 dark:focus:ring-gray-700">
+                    🔄 Refresh List
+                </button>
+                </div>
+            </div>
+
+            <!-- Live Preview -->
+            <div id="preview-container" class="bg-gray-900 shadow rounded-lg mb-6 hidden">
+                <div class="p-4">
+                <h2 class="text-lg font-semibold text-white mb-4">Live Screen Preview</h2>
+                <div class="flex justify-center bg-black rounded-lg overflow-hidden">
+                    <img id="screen-preview" src="" alt="Screen Preview" class="max-w-full h-auto" style="max-height: 600px;">
+                </div>
+                <p class="text-sm text-gray-400 mt-2 text-center">Streaming live screen</p>
+                </div>
+            </div>
+
+            <!-- Recordings List -->
+            <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm 2xl:col-span-2 dark:border-gray-700 sm:p-6 dark:bg-gray-800">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">🗂 Screen Recordings</h2>
+
+                <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead class="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date/Time</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Filename</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Duration</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Size</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody id="recordings-list" class="bg-white divide-y divide-gray-200 dark:bg-gray-800 dark:divide-gray-700">
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">No recordings yet.</td>
+                    </tr>
+                    </tbody>
+                </table>
+                </div>
+            </div>
+
+            </div>
+    </div>
+</main>
+
+
+
+<script>
+
+    function initScreenPage() {
+        if (!document.querySelector('[data-page="screen"]')) return;
+
+        console.log("INIT SCREEN PAGE OK!");
+
+        const API = {
+            ON: '/remote/api/screen/on', OFF: '/remote/api/screen/off', STREAM: '/remote/api/screen/stream',
+            REC_START: '/remote/api/screen/record/start', REC_STOP: '/remote/api/screen/record/stop',
+            LIST: '/remote/api/screen/list', STATUS: '/remote/api/screen/status', DELETE_BASE: '/remote/api/screen/delete/'
+        };
+
+        const turnOnBtn = document.getElementById('turn-on-btn');
+        const turnOffBtn = document.getElementById('turn-off-btn');
+        const startRecBtn = document.getElementById('start-rec-btn');
+        const stopRecBtn = document.getElementById('stop-rec-btn');
+        const refreshListBtn = document.getElementById('refresh-list-btn');
+        const streamStatus = document.getElementById('stream-status');
+        const recordingStatus = document.getElementById('recording-status');
+        const durationDisplay = document.getElementById('duration-display');
+        const recordingDuration = document.getElementById('recording-duration');
+        const previewContainer = document.getElementById('preview-container');
+        const screenPreview = document.getElementById('screen-preview');
+        const recordingsList = document.getElementById('recordings-list');
+
+        let isStreamOn = false;
+        let isRecording = false;
+        let streamInterval = null;
+        let durationInterval = null;
+        let recordingStartTime = null;
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        function updateDuration() {
+            if (!recordingStartTime) return;
+            const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+            const h = Math.floor(elapsed / 3600);
+            const m = Math.floor((elapsed % 3600) / 60);
+            const s = elapsed % 60;
+            recordingDuration.textContent =
+                `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        // --- ACTIONS ---
+        async function turnOnScreen() {
+
+            const activeStream = localStorage.getItem('ACTIVE_STREAM_MODE');
+            if (activeStream === 'WEBCAM') {
+                showNotification("warning", "Cannot start Screen Stream because <b>Webcam</b> is currently active!<br>Please turn off Webcam first.");
+                return;
+            }
+
+            turnOnBtn.disabled = true; 
+            turnOnBtn.textContent = 'Connecting...';
+
+            try {
+                const res = await fetch(API.ON, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') }
+                });
+
+                const data = await res.json();
+                if (data.success || data.message.includes('already')) {
+
+                    isStreamOn = true;
+
+                    localStorage.setItem('ACTIVE_STREAM_MODE', 'SCREEN');
+
+                    streamStatus.textContent = '🟢 ON';
+                    streamStatus.classList.add('text-green-600');
+
+                    previewContainer.classList.remove('hidden');
+                    startRecBtn.classList.remove('hidden');
+
+                    turnOffBtn.disabled = false;
+                    turnOffBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+                    turnOffBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+
+                    startRecBtn.disabled = false;
+                    startRecBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+                    startRecBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+
+                    startStreaming();
+
+                    showNotification("success", "🖥 Screen stream started successfully!");
+                } else {
+                    showNotification("error", data.message);
+                }
+
+            } catch (e) {
+                showNotification("error", "Connection error: " + e.message);
+            }
+            finally {
+                turnOnBtn.disabled = false;
+                turnOnBtn.textContent = '▶ Start Stream';
+            }
+        }
+
+        async function turnOffScreen() {
+            try {
+                if (isRecording) await stopRecording();
+
+                await fetch(API.OFF, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') }
+                });
+
+                isStreamOn = false;
+                localStorage.removeItem('ACTIVE_STREAM_MODE');
+
+                streamStatus.textContent = '⚪ OFF';
+                streamStatus.classList.remove('text-green-600');
+
+                previewContainer.classList.add('hidden');
+                startRecBtn.classList.add('hidden');
+                stopRecBtn.classList.add('hidden');
+
+                turnOffBtn.disabled = true;
+                turnOffBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
+                turnOffBtn.classList.remove('bg-red-600');
+
+                stopStreaming();
+
+                showNotification("info", "Screen stream stopped.");
+            }
+            catch (e) {
+                showNotification("error", "Error stopping screen: " + e.message);
+            }
+        }
+
+        function startStreaming() {
+            if (streamInterval) clearInterval(streamInterval);
+            streamInterval = setInterval(() => {
+                screenPreview.src = API.STREAM + "?t=" + new Date().getTime();
+            }, 200);
+        }
+
+        function stopStreaming() {
+            if (streamInterval) clearInterval(streamInterval);
+            screenPreview.src = '';
+        }
+
+        async function startRecording() {
+            startRecBtn.disabled = true;
+
+            try {
+                const res = await fetch(API.REC_START, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') }
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    isRecording = true;
+
+                    recordingStatus.textContent = '🔴 RECORDING';
+                    recordingStatus.classList.add('text-red-600');
+
+                    durationDisplay.classList.remove('hidden');
+                    recordingStartTime = Date.now();
+                    durationInterval = setInterval(updateDuration, 1000);
+
+                    startRecBtn.classList.add('hidden');
+
+                    stopRecBtn.classList.remove('hidden');
+                    stopRecBtn.disabled = false;
+                    stopRecBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+                    stopRecBtn.classList.add('bg-red-600');
+
+                    showNotification("success", "Recording started.");
+                }
+                else {
+                    showNotification("error", data.message);
+                }
+
+            } catch (e) {
+                showNotification("error", "Error starting record: " + e.message);
+            }
+            finally {
+                startRecBtn.disabled = false;
+            }
+        }
+
+        async function stopRecording() {
+            stopRecBtn.disabled = true;
+            stopRecBtn.textContent = 'Saving...';
+
+            try {
+                const res = await fetch(API.REC_STOP, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') }
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    isRecording = false;
+
+                    recordingStatus.textContent = '⚪ STOPPED';
+                    recordingStatus.classList.remove('text-red-600');
+
+                    durationDisplay.classList.add('hidden');
+                    if (durationInterval) clearInterval(durationInterval);
+
+                    stopRecBtn.classList.add('hidden');
+                    startRecBtn.classList.remove('hidden');
+
+                    loadRecordingsList();
+
+                    showNotification("success",
+                        `Saved <b>${data.filename}</b> (${data.file_size})`);
+                }
+                else {
+                    showNotification("error", data.message);
+                }
+
+            } catch (e) {
+                showNotification("error", "Error stopping record: " + e.message);
+            }
+            finally {
+                stopRecBtn.disabled = false;
+                stopRecBtn.textContent = '⏹ Stop Recording';
+            }
+        }
+
+        async function loadRecordingsList() {
+            try {
+                const res = await fetch(API.LIST);
+                const data = await res.json();
+
+                if (data.success && data.recordings.length > 0) {
+                    recordingsList.innerHTML = data.recordings.map(rec => `
+                        <tr>
+                            <td class="px-6 py-4 text-sm text-gray-900 dark:text-white">${rec.recorded_at}</td>
+                            <td class="px-6 py-4 text-sm text-gray-500">${rec.filename}</td>
+                            <td class="px-6 py-4 text-sm text-gray-500">${rec.duration}</td>
+                            <td class="px-6 py-4 text-sm text-gray-500">${rec.file_size}</td>
+                            <td class="px-6 py-4 text-sm font-medium">
+                                <a href="${rec.file_url}" target="_blank" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
+                                <a href="${rec.file_url}" download class="text-green-600 hover:text-green-900 dark:text-green-400 mr-3">Download</a>
+                                <button onclick="deleteRecording(${rec.id})" class="text-red-600 hover:text-red-900 font-bold">Delete</button>
+                            </td>
+                        </tr>`).join('');
+                } else {
+                    recordingsList.innerHTML =
+                        '<tr><td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">No recordings yet.</td></tr>';
+                }
+
+            } catch (e) {
+                showNotification("error", "Error loading list.");
+            }
+        }
+
+        window.deleteRecording = async function(id) {
+            if (!confirm('Are you sure you want to delete this recording?')) return;
+
+            try {
+                const response = await fetch(API.DELETE_BASE + id + '/', {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    loadRecordingsList();
+                    showNotification("success", "Recording deleted.");
+                }
+                else {
+                    showNotification("error", "Delete failed: " + data.message);
+                }
+
+            } catch (error) {
+                showNotification("error", "Error: " + error);
+            }
+        };
+
+        refreshListBtn.addEventListener('click', loadRecordingsList);
+        turnOnBtn.addEventListener('click', turnOnScreen);
+        turnOffBtn.addEventListener('click', turnOffScreen);
+        startRecBtn.addEventListener('click', startRecording);
+        stopRecBtn.addEventListener('click', stopRecording);
+
+        loadRecordingsList();
+    }
+document.addEventListener('htmx:afterSwap', initScreenPage);
+document.addEventListener('DOMContentLoaded', initScreenPage);
+
+</script>
+
+<style>
+    /* CSS cho nút tròn (btn-circle) nếu theme chưa có */
+    .btn-circle {
+        border-radius: 100%;
+        height: 2.5rem;
+        width: 2.5rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .btn-circle.btn-sm {
+        height: 1.8rem;
+        width: 1.8rem;
+        font-size: 0.75rem;
+    }
+</style>

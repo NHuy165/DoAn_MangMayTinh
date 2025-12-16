@@ -88,33 +88,49 @@ def server_info(request):
 # ==================== APPLICATION PAGES ====================
 
 def applications_page(request):
+    if request.headers.get("HX-Request"):
+        return render(request, 'remote_control/partials/applications_partial.html')
     return render(request, 'remote_control/applications.html')
 
 
 # ==================== PROCESS PAGES ====================
 
 def processes_page(request):
+    if request.headers.get('HX-Request'):
+        return render(request, 'remote_control/partials/processes_partial.html')
     return render(request, 'remote_control/processes.html')
 
 
 # ==================== OTHER FEATURE PAGES ====================
 
 def screenshot_page(request):
+    if request.headers.get('HX-Request'):
+        return render(request, 'remote_control/partials/screenshot_partial.html')
     return render(request, 'remote_control/screenshot.html')
 
 def keylogger_page(request):
+    if request.headers.get('HX-Request'):
+        return render(request, 'remote_control/partials/keylogger_partial.html')
     return render(request, 'remote_control/keylogger.html')
 
 def webcam_page(request):
+    if request.headers.get('HX-Request'):
+        return render(request, 'remote_control/partials/webcam_partial.html')
     return render(request, 'remote_control/webcam.html')
 
 def screen_page(request):
+    if request.headers.get('HX-Request'):
+        return render(request, 'remote_control/partials/screen_partial.html')
     return render(request, 'remote_control/screen.html')
 
 def power_page(request):
+    if request.headers.get('HX-Request'):
+        return render(request, 'remote_control/partials/power_partial.html')
     return render(request, 'remote_control/power.html')
 
 def shell_page(request):
+    if request.headers.get('HX-Request'):
+        return render(request, 'remote_control/partials/shell_partial.html')
     return render(request, 'remote_control/shell.html')
 
 # ==================== UDP DISCOVERY API ====================
