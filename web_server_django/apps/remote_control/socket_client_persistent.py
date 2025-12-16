@@ -607,9 +607,15 @@ class PersistentRemoteClient:
                     "cpu_load": get_part(0, "0"),
                     "ram_free": get_part(1, "0"),
                     "battery": get_part(2, "Unknown"),
-                    "hostname": get_part(3, "Unknown"),
-                    "os_info": get_part(4, "Unknown"),
-                    "internal_ip": get_part(5, "Unknown"),
+                    "uptime": get_part(3, "0d 0h"),       # Mới
+                    "hostname": get_part(4, "Unknown"),
+                    "os_info": get_part(5, "Unknown"),
+                    "internal_ip": get_part(6, "Unknown"),
+                    "cpu_name": get_part(7, "Generic CPU"), # Mới
+                    "gpu_name": get_part(8, "Generic GPU"), # Mới
+                    "ram_total": get_part(9, "? GB"),   
+                    "disk_info": get_part(10, "Unknown Drive"),
+                    "screen_res": get_part(11, "Unknown Res"),
                     "latency": latency
                 }
                 

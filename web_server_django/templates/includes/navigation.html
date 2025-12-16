@@ -140,6 +140,7 @@
     const disconnectBtn = document.getElementById('disconnect-server-btn');
     const discoverBtn = document.getElementById('discover-servers-btn');
     
+    let isBusy = false;
     let availableServers = [];
     
     // ==================== CHECK SERVER RESTART ====================
@@ -293,6 +294,8 @@
     // Connect to selected server
     if (connectBtn) {
       connectBtn.addEventListener('click', async function() {
+        if (isBusy) return;
+
         const selectedIp = serverSelect.value;
         
         if (!selectedIp) {
@@ -300,6 +303,7 @@
           return;
         }
         
+        isBusy = true;
         connectBtn.disabled = true;
         connectBtn.textContent = 'Connecting...';
         
@@ -327,21 +331,30 @@
             console.log(`✅ Connected: ${serverInfo.name}`);
             
             // Update button to show connected state
+            connectBtn.classList.add('hidden');
             connectBtn.classList.remove('bg-primary-700', 'hover:bg-primary-800', 'dark:bg-primary-600', 'dark:hover:bg-primary-700');
             connectBtn.classList.add('bg-green-600', 'hover:bg-green-700', 'dark:bg-green-500', 'dark:hover:bg-green-600');
             connectBtn.textContent = 'Connected';
             // Show disconnect button, hide connect button
             connectBtn.classList.add('hidden');
             disconnectBtn.classList.remove('hidden');
+
+            disconnectBtn.disabled = true;
+            setTimeout(() => {
+                disconnectBtn.disabled = false;
+            }, 1000);
+
           } else {
             showNotification('error', data.message || 'Failed to connect');
             connectBtn.textContent = 'Connect';
+            connectBtn.classList.remove('hidden');
           }
         } catch (error) {
           showNotification('error', 'Connection error: ' + error.message);
           connectBtn.textContent = 'Connect';
         } finally {
           connectBtn.disabled = false;
+          isBusy = false;
         }
       });
     }
@@ -383,7 +396,8 @@
     
     if (disconnectBtn) {
       disconnectBtn.addEventListener('click', async function() {
-        
+        if (isBusy) return;
+
         // Check Stream (Giữ nguyên logic bảo vệ cũ của bạn)
         const activeStream = localStorage.getItem('ACTIVE_STREAM_MODE');
         if (activeStream) {
@@ -391,6 +405,7 @@
             return;
         }
         
+        isBusy = true;
         disconnectBtn.disabled = true;
         disconnectBtn.textContent = 'Disconnecting...';
         
@@ -422,6 +437,10 @@
           showNotification("error", 'Disconnect error: ' + error.message);
           disconnectBtn.disabled = false;
           disconnectBtn.textContent = 'Disconnect';
+        } finally {
+          disconnectBtn.disabled = false;
+          disconnectBtn.textContent = 'Disconnect'; // Reset text lại
+          isBusy = false;
         }
       });
     }

