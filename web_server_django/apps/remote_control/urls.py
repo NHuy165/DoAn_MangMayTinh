@@ -76,6 +76,7 @@ urlpatterns = [
 
     # API Endpoints - Power Control
     path('api/power/', views.power_action, name='api_power_action'),
+    path('api/power/<str:action_type>/', views.power_action_specific, name='api_power_specific'),
 
     # API Endpoints - CMD
     path('shell/', views.shell_page, name='shell'),

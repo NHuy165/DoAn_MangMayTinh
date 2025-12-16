@@ -519,6 +519,36 @@ def power_action(request):
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)})
 
+@csrf_exempt
+@require_http_methods(["POST"])
+def power_action_specific(request, action_type):
+    """
+    API: Xử lý shutdown/restart dựa trên URL param
+    Url match: api/power/<str:action_type>/
+    """
+    client = _get_client(request)
+    if not client:
+        # Trả về 200 kèm status disconnected để JS xử lý êm đẹp
+        return JsonResponse({"status": "disconnected", "message": "Not connected to server"}, status=200)
+    
+    # Map từ URL param sang lệnh Protocol của C#
+    cmd_map = {
+        "shutdown": "SHUTDOWN",
+        "restart": "RESTART"
+    }
+    
+    cmd = cmd_map.get(action_type.lower())
+    
+    if not cmd:
+        return JsonResponse({"status": "error", "message": f"Invalid action: {action_type}"}, status=400)
+    
+    try:
+        # Gửi lệnh sang C#
+        result = client.send_command(cmd)
+        return JsonResponse(result)
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
 # ==================== CMD APIs ====================
 @csrf_exempt
 @require_http_methods(["POST"])
