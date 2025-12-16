@@ -502,23 +502,6 @@ def clear_keylog(request):
     result = client.send_command("KEYLOG", "CLEAR")
     return JsonResponse(result)
 
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def power_action(request):
-    """API: Shutdown/Restart remote server - DÙNG PERSISTENT CONNECTION"""
-    client = _get_client(request)
-    if not client:
-        return JsonResponse({"status": "error", "message": "Not connected to server"}, status=400)
-    
-    try:
-        data = json.loads(request.body)
-        action = data.get('action')  # SHUTDOWN hoặc RESTART
-        result = client.send_command(action)
-        return JsonResponse(result)
-    except Exception as e:
-        return JsonResponse({"status": "error", "message": str(e)})
-
 @csrf_exempt
 @require_http_methods(["POST"])
 def power_action_specific(request, action_type):
@@ -545,6 +528,20 @@ def power_action_specific(request, action_type):
     try:
         # Gửi lệnh sang C#
         result = client.send_command(cmd)
+
+        if result.get("status") == "success":
+            # Ngắt socket và xóa khỏi danh sách _instances
+            session_id = request.session.session_key
+            PersistentRemoteClient.disconnect_session(session_id)
+            
+            # Xóa IP trong session của Django để giao diện quay về màn hình Connect
+            if 'target_server_ip' in request.session:
+                del request.session['target_server_ip']
+            
+            # Báo thêm flag này để Frontend biết mà chuyển trang
+            result["disconnected"] = True 
+            result["message"] += " & Disconnected."
+
         return JsonResponse(result)
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
