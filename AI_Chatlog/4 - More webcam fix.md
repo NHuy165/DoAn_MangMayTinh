@@ -1,6 +1,6 @@
 # Sửa camera
 
-**Nội dung:** 12/16/2025 9:08:03  
+**Nội dung:** Sửa các lỗi trong phần webcam 
 **Assistant:** Gemini
 
 ## Prompt:
@@ -3990,7 +3990,7 @@ def webcam_stop_recording(request):
 Làm theo 3 bước này, file code của bạn sẽ vẫn giữ được cấu trúc phân vùng gọn gàng và không còn báo lỗi thiếu thư viện nữa.
 
 ## Prompt:
-> views.py  
+> views - PY  
 
 Tôi không biết bạn đọc có bị nhầm không, vì những hàm như webcam\_page chỉ có như vầy thôi
 

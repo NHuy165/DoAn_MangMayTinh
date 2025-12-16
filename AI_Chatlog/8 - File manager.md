@@ -1,7 +1,7 @@
-# Triển khai đồ án mạng máy tính
+# File manager
 
-**Exported:** 12/14/2025 11:51:24  
-**Link:** [https://gemini.google.com/app/0633f0fcd74e5a5c](https://gemini.google.com/app/0633f0fcd74e5a5c)
+**Nội dung:** Thêm tính năng file manager, cho phép người dùng truy cập, download và delete file bên máy chủ server.
+**Assistant:** Gemini
 
 ## Prompt:
 Tôi cần thêm chức năng Remote File Manager vào dự án Django Remote Control của mình. Hãy viết code cho 3 file: views.py, urls.py và templates/remote_control/file_manager.html với các yêu cầu kỹ thuật nghiêm ngặt sau:
