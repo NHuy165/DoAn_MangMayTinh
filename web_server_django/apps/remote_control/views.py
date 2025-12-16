@@ -69,8 +69,8 @@ def cleanup_missing_recordings():
         pass
 
 def index(request):
-    """Trang chủ Remote Control Dashboard - Tổng quan"""
-    return render(request, 'remote_control/index.html')
+    """Trang chủ Tổng quan"""
+    return render(request, 'remote_control/home.html')
 
 
 @require_http_methods(["GET"])
@@ -975,8 +975,6 @@ def screen_delete(request, recording_id):
     
 # ==================== FILE MANAGER STRICT MODE ====================
 
-
-
 # --- CÁC API BÊN DƯỚI DÙNG CHO JAVASCRIPT ---
 
 @csrf_exempt
@@ -1049,3 +1047,29 @@ def file_download(request):
             return JsonResponse(result, status=404)
     except Exception as e:
         return JsonResponse({"success": False, "message": str(e)}, status=500)
+    
+# ==================== SYSTEM INFORMATION ====================
+
+@require_http_methods(["GET"])
+def get_server_stats(request):
+    """
+    API: Lấy thông số Dashboard
+    Frontend gọi liên tục 2s/lần
+    """
+    client = _get_client(request)
+    
+    # 1. Nếu chưa có kết nối -> Trả về disconnected để frontend ẩn bảng
+    if not client or not client.connected:
+        return JsonResponse({
+            "status": "disconnected",
+            "message": "Client not connected"
+        })
+        
+    # 2. Gửi lệnh lấy info
+    result = client.get_system_stats()
+    
+    # 3. Nếu socket lỗi giữa chừng -> cũng báo disconnected
+    if result.get("status") == "error" and "Broken pipe" in str(result.get("message")):
+         return JsonResponse({"status": "disconnected"})
+
+    return JsonResponse(result)

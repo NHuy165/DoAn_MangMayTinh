@@ -569,3 +569,57 @@ class PersistentRemoteClient:
                 }
             except Exception as e:
                 return {"success": False, "message": str(e)}
+
+    # ==================== MODULE SYSTEM INFORMATION ====================
+
+    def get_system_stats(self):
+        if not self.connected:
+            return {"status": "error", "message": "Not connected"}
+            
+        with self._lock:
+            try:
+                # --- THÊM TIMEOUT TẠM THỜI ---
+                # Chỉ chờ C# trả lời trong 2 giây. Nếu lâu hơn -> Bỏ qua.
+                self.socket.settimeout(2.0) 
+                
+                start_time = time.time()
+                
+                self._send_str("SYSTEM_INFO")
+                response = self._recv_line()
+                
+                end_time = time.time()
+                
+                # --- TRẢ LẠI TIMEOUT MẶC ĐỊNH ---
+                self.socket.settimeout(self.timeout) 
+                
+                # ... (Phần xử lý latency và data giữ nguyên) ...
+                latency = round((end_time - start_time) * 1000, 0)
+                
+                # ... (Code parse data giữ nguyên) ...
+                
+                if response.startswith("ERROR"):
+                     return {"status": "error", "message": response}
+
+                parts = response.split('|')
+                def get_part(idx, default="?"): return parts[idx] if len(parts) > idx else default
+
+                data = {
+                    "cpu_load": get_part(0, "0"),
+                    "ram_free": get_part(1, "0"),
+                    "battery": get_part(2, "Unknown"),
+                    "hostname": get_part(3, "Unknown"),
+                    "os_info": get_part(4, "Unknown"),
+                    "internal_ip": get_part(5, "Unknown"),
+                    "latency": latency
+                }
+                
+                return {"status": "success", "data": data}
+                
+            except socket.timeout:
+                # Nếu timeout -> Coi như server bận, không ngắt kết nối
+                # Trả về status 'busy' để frontend biết mà không báo lỗi
+                return {"status": "error", "message": "Timeout (Server Busy)"}
+                
+            except Exception as e:
+                self.connected = False
+                return {"status": "error", "message": str(e)}

