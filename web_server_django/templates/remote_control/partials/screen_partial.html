@@ -83,19 +83,16 @@
     </div>
 </main>
 
-
-
 <script>
-
     function initScreenPage() {
         if (!document.querySelector('[data-page="screen"]')) return;
 
-        console.log("INIT SCREEN PAGE OK!");
-
         const API = {
-            ON: '/remote/api/screen/on', OFF: '/remote/api/screen/off', STREAM: '/remote/api/screen/stream',
+            ON: '/remote/api/screen/on', OFF: '/remote/api/screen/off', 
+            STREAM: '/remote/api/screen/stream',
             REC_START: '/remote/api/screen/record/start', REC_STOP: '/remote/api/screen/record/stop',
-            LIST: '/remote/api/screen/list', STATUS: '/remote/api/screen/status', DELETE_BASE: '/remote/api/screen/delete/'
+            LIST: '/remote/api/screen/list', STATUS: '/remote/api/screen/status', 
+            DELETE_BASE: '/remote/api/screen/delete/'
         };
 
         const turnOnBtn = document.getElementById('turn-on-btn');
@@ -117,6 +114,76 @@
         let durationInterval = null;
         let recordingStartTime = null;
 
+        // --- HELPER: SET BUTTON STATE ---
+        function setBtnState(btn, isEnabled, activeColorClass, text = null) {
+            if (!btn) return;
+            if (text) btn.textContent = text;
+            if (isEnabled) {
+                btn.disabled = false;
+                btn.classList.remove('bg-gray-400', 'cursor-not-allowed', 'hidden');
+                const colors = activeColorClass.split(' ');
+                btn.classList.add(...colors);
+            } else {
+                btn.disabled = true;
+                const colors = activeColorClass.split(' ');
+                btn.classList.remove(...colors);
+                btn.classList.add('bg-gray-400', 'cursor-not-allowed');
+            }
+        }
+
+        // --- RENDER UI ---
+        function renderUI() {
+            if (isStreamOn) {
+                streamStatus.textContent = '🟢 ON';
+                streamStatus.classList.add('text-green-600');
+                previewContainer.classList.remove('hidden');
+
+                // Nút Bật -> Disable
+                setBtnState(turnOnBtn, false, 'bg-green-600 hover:bg-green-700', 'Screen On');
+                
+                // Nút Tắt -> Enable
+                setBtnState(turnOffBtn, true, 'bg-red-600 hover:bg-red-700');
+
+                if (!streamInterval) startStreaming();
+            } else {
+                streamStatus.textContent = '⚪ OFF';
+                streamStatus.classList.remove('text-green-600');
+                previewContainer.classList.add('hidden');
+
+                // Nút Bật -> Enable
+                setBtnState(turnOnBtn, true, 'bg-green-600 hover:bg-green-700', '🖥 Turn On Screen');
+                
+                // Nút Tắt -> Disable
+                setBtnState(turnOffBtn, false, 'bg-red-600 hover:bg-red-700');
+
+                stopStreaming();
+            }
+
+            if (isStreamOn) {
+                if (isRecording) {
+                    recordingStatus.textContent = '🔴 RECORDING';
+                    recordingStatus.classList.add('text-red-600');
+                    durationDisplay.classList.remove('hidden');
+
+                    startRecBtn.classList.add('hidden');
+                    stopRecBtn.classList.remove('hidden');
+                    setBtnState(stopRecBtn, true, 'bg-red-600 hover:bg-red-700');
+                } else {
+                    recordingStatus.textContent = '⚪ STOPPED';
+                    recordingStatus.classList.remove('text-red-600');
+                    durationDisplay.classList.add('hidden');
+
+                    startRecBtn.classList.remove('hidden');
+                    stopRecBtn.classList.add('hidden');
+                    setBtnState(startRecBtn, true, 'bg-red-600 hover:bg-red-700');
+                }
+            } else {
+                startRecBtn.classList.add('hidden');
+                stopRecBtn.classList.add('hidden');
+                durationDisplay.classList.add('hidden');
+            }
+        }
+
         function getCookie(name) {
             let cookieValue = null;
             if (document.cookie && document.cookie !== '') {
@@ -134,7 +201,10 @@
 
         function updateDuration() {
             if (!recordingStartTime) return;
-            const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+            const now = Date.now();
+            const elapsed = Math.floor((now - recordingStartTime) / 1000);
+            if (elapsed < 0) return;
+
             const h = Math.floor(elapsed / 3600);
             const m = Math.floor((elapsed % 3600) / 60);
             const s = elapsed % 60;
@@ -142,194 +212,108 @@
                 `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
         }
 
-        // --- ACTIONS ---
         async function turnOnScreen() {
-
-            const activeStream = localStorage.getItem('ACTIVE_STREAM_MODE');
-            if (activeStream === 'WEBCAM') {
-                showNotification("warning", "Cannot start Screen Stream because <b>Webcam</b> is currently active!<br>Please turn off Webcam first.");
+            if (localStorage.getItem('ACTIVE_STREAM_MODE') === 'WEBCAM') {
+                alert("Cannot start Screen Stream because Webcam is active!");
                 return;
             }
-
-            turnOnBtn.disabled = true; 
-            turnOnBtn.textContent = 'Connecting...';
-
+            setBtnState(turnOnBtn, false, 'bg-green-600', 'Connecting...');
             try {
                 const res = await fetch(API.ON, {
-                    method: 'POST',
-                    headers: { 'X-CSRFToken': getCookie('csrftoken') }
+                    method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') }
                 });
-
                 const data = await res.json();
                 if (data.success || data.message.includes('already')) {
-
                     isStreamOn = true;
-
                     localStorage.setItem('ACTIVE_STREAM_MODE', 'SCREEN');
-
-                    streamStatus.textContent = '🟢 ON';
-                    streamStatus.classList.add('text-green-600');
-
-                    previewContainer.classList.remove('hidden');
-                    startRecBtn.classList.remove('hidden');
-
-                    turnOffBtn.disabled = false;
-                    turnOffBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
-                    turnOffBtn.classList.add('bg-red-600', 'hover:bg-red-700');
-
-                    startRecBtn.disabled = false;
-                    startRecBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
-                    startRecBtn.classList.add('bg-red-600', 'hover:bg-red-700');
-
-                    startStreaming();
-
-                    showNotification("success", "🖥 Screen stream started successfully!");
+                    setBtnState(turnOnBtn, true, 'bg-green-600', 'Screen On'); // Reset temp
+                    renderUI();
+                    setTimeout(updateStatus, 500);
                 } else {
-                    showNotification("error", data.message);
+                    alert(data.message);
+                    setBtnState(turnOnBtn, true, 'bg-green-600', '🖥 Turn On Screen');
                 }
-
             } catch (e) {
-                showNotification("error", "Connection error: " + e.message);
-            }
-            finally {
-                turnOnBtn.disabled = false;
-                turnOnBtn.textContent = '▶ Start Stream';
+                console.error(e);
+                setBtnState(turnOnBtn, true, 'bg-green-600', '🖥 Turn On Screen');
             }
         }
 
         async function turnOffScreen() {
+            setBtnState(turnOffBtn, false, 'bg-red-600');
             try {
                 if (isRecording) await stopRecording();
-
                 await fetch(API.OFF, {
-                    method: 'POST',
-                    headers: { 'X-CSRFToken': getCookie('csrftoken') }
+                    method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') }
                 });
-
                 isStreamOn = false;
                 localStorage.removeItem('ACTIVE_STREAM_MODE');
-
-                streamStatus.textContent = '⚪ OFF';
-                streamStatus.classList.remove('text-green-600');
-
-                previewContainer.classList.add('hidden');
-                startRecBtn.classList.add('hidden');
-                stopRecBtn.classList.add('hidden');
-
-                turnOffBtn.disabled = true;
-                turnOffBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
-                turnOffBtn.classList.remove('bg-red-600');
-
-                stopStreaming();
-
-                showNotification("info", "Screen stream stopped.");
-            }
-            catch (e) {
-                showNotification("error", "Error stopping screen: " + e.message);
-            }
-        }
-
-        function startStreaming() {
-            if (streamInterval) clearInterval(streamInterval);
-            streamInterval = setInterval(() => {
-                screenPreview.src = API.STREAM + "?t=" + new Date().getTime();
-            }, 200);
-        }
-
-        function stopStreaming() {
-            if (streamInterval) clearInterval(streamInterval);
-            screenPreview.src = '';
+                setBtnState(turnOffBtn, true, 'bg-red-600');
+                renderUI();
+            } catch (e) { console.error(e); }
         }
 
         async function startRecording() {
-            startRecBtn.disabled = true;
-
+            setBtnState(startRecBtn, false, 'bg-red-600');
             try {
                 const res = await fetch(API.REC_START, {
-                    method: 'POST',
-                    headers: { 'X-CSRFToken': getCookie('csrftoken') }
+                    method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') }
                 });
-
                 const data = await res.json();
-
                 if (data.success) {
                     isRecording = true;
-
-                    recordingStatus.textContent = '🔴 RECORDING';
-                    recordingStatus.classList.add('text-red-600');
-
-                    durationDisplay.classList.remove('hidden');
+                    // LƯU STORAGE
                     recordingStartTime = Date.now();
+                    localStorage.setItem('SCREEN_START_TIME', recordingStartTime);
+
+                    // CHẠY NGAY
+                    updateDuration();
                     durationInterval = setInterval(updateDuration, 1000);
-
-                    startRecBtn.classList.add('hidden');
-
-                    stopRecBtn.classList.remove('hidden');
-                    stopRecBtn.disabled = false;
-                    stopRecBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
-                    stopRecBtn.classList.add('bg-red-600');
-
-                    showNotification("success", "Recording started.");
+                    renderUI();
+                } else {
+                    alert(data.message);
+                    setBtnState(startRecBtn, true, 'bg-red-600');
                 }
-                else {
-                    showNotification("error", data.message);
-                }
-
-            } catch (e) {
-                showNotification("error", "Error starting record: " + e.message);
-            }
-            finally {
-                startRecBtn.disabled = false;
-            }
+            } catch (e) { console.error(e); setBtnState(startRecBtn, true, 'bg-red-600'); }
         }
 
         async function stopRecording() {
-            stopRecBtn.disabled = true;
-            stopRecBtn.textContent = 'Saving...';
-
+            setBtnState(stopRecBtn, false, 'bg-red-600', 'Saving...');
             try {
                 const res = await fetch(API.REC_STOP, {
-                    method: 'POST',
-                    headers: { 'X-CSRFToken': getCookie('csrftoken') }
+                    method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') }
                 });
-
                 const data = await res.json();
-
                 if (data.success) {
                     isRecording = false;
-
-                    recordingStatus.textContent = '⚪ STOPPED';
-                    recordingStatus.classList.remove('text-red-600');
-
-                    durationDisplay.classList.add('hidden');
-                    if (durationInterval) clearInterval(durationInterval);
-
-                    stopRecBtn.classList.add('hidden');
-                    startRecBtn.classList.remove('hidden');
+                    clearInterval(durationInterval);
+                    durationInterval = null;
+                    localStorage.removeItem('SCREEN_START_TIME');
 
                     loadRecordingsList();
-
-                    showNotification("success",
-                        `Saved <b>${data.filename}</b> (${data.file_size})`);
+                    renderUI();
+                    alert(`Saved: ${data.filename}`);
                 }
-                else {
-                    showNotification("error", data.message);
-                }
+            } catch (e) { console.error(e); }
+            finally { setBtnState(stopRecBtn, true, 'bg-red-600', '⏹ Stop Recording'); }
+        }
 
-            } catch (e) {
-                showNotification("error", "Error stopping record: " + e.message);
-            }
-            finally {
-                stopRecBtn.disabled = false;
-                stopRecBtn.textContent = '⏹ Stop Recording';
-            }
+        function startStreaming() {
+            if (streamInterval) return;
+            streamInterval = setInterval(() => {
+                if (isStreamOn) screenPreview.src = API.STREAM + "?t=" + new Date().getTime();
+            }, 250);
+        }
+
+        function stopStreaming() {
+            if (streamInterval) { clearInterval(streamInterval); streamInterval = null; }
+            screenPreview.src = '';
         }
 
         async function loadRecordingsList() {
             try {
                 const res = await fetch(API.LIST);
                 const data = await res.json();
-
                 if (data.success && data.recordings.length > 0) {
                     recordingsList.innerHTML = data.recordings.map(rec => `
                         <tr>
@@ -338,71 +322,83 @@
                             <td class="px-6 py-4 text-sm text-gray-500">${rec.duration}</td>
                             <td class="px-6 py-4 text-sm text-gray-500">${rec.file_size}</td>
                             <td class="px-6 py-4 text-sm font-medium">
-                                <a href="${rec.file_url}" target="_blank" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
-                                <a href="${rec.file_url}" download class="text-green-600 hover:text-green-900 dark:text-green-400 mr-3">Download</a>
+                                <a href="${rec.file_url}" download class="text-green-600 hover:text-green-900 mr-3">Download</a>
                                 <button onclick="deleteRecording(${rec.id})" class="text-red-600 hover:text-red-900 font-bold">Delete</button>
                             </td>
                         </tr>`).join('');
                 } else {
-                    recordingsList.innerHTML =
-                        '<tr><td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">No recordings yet.</td></tr>';
+                    recordingsList.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">No recordings yet.</td></tr>';
                 }
-
-            } catch (e) {
-                showNotification("error", "Error loading list.");
-            }
+            } catch (e) { console.error(e); }
         }
 
         window.deleteRecording = async function(id) {
-            if (!confirm('Are you sure you want to delete this recording?')) return;
-
-            try {
-                const response = await fetch(API.DELETE_BASE + id + '/', {
-                    method: 'DELETE',
-                    headers: { 'X-CSRFToken': getCookie('csrftoken') }
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    loadRecordingsList();
-                    showNotification("success", "Recording deleted.");
-                }
-                else {
-                    showNotification("error", "Delete failed: " + data.message);
-                }
-
-            } catch (error) {
-                showNotification("error", "Error: " + error);
-            }
+            if (!confirm('Delete?')) return;
+            await fetch(API.DELETE_BASE + id + '/', {
+                method: 'DELETE', headers: { 'X-CSRFToken': getCookie('csrftoken') }
+            });
+            loadRecordingsList();
         };
 
-        if (turnOnBtn) turnOnBtn.onclick = turnOnScreen;
-        if (turnOffBtn) turnOffBtn.onclick = turnOffScreen;
-        if (startRecBtn) startRecBtn.onclick = startRecording;
-        if (stopRecBtn) stopRecBtn.onclick = stopRecording;
-        if (refreshListBtn) refreshListBtn.onclick = loadRecordingsList;
+        async function updateStatus() {
+            try {
+                const res = await fetch(API.STATUS);
+                const data = await res.json();
+                
+                const serverOn = data.on || false;
+                const serverRec = data.rec || false;
+
+                // LOGIC SYNC TIMER
+                if (serverRec) {
+                    const savedTime = localStorage.getItem('SCREEN_START_TIME');
+                    if (savedTime) {
+                        recordingStartTime = parseInt(savedTime);
+                    } else {
+                        recordingStartTime = Date.now();
+                        localStorage.setItem('SCREEN_START_TIME', recordingStartTime);
+                    }
+                    if (!durationInterval) {
+                        // FIX LAG
+                        updateDuration();
+                        durationInterval = setInterval(updateDuration, 1000);
+                    }
+                } else {
+                    if (durationInterval) {
+                        clearInterval(durationInterval);
+                        durationInterval = null;
+                        localStorage.removeItem('SCREEN_START_TIME');
+                    }
+                }
+
+                if (serverOn !== isStreamOn || serverRec !== isRecording) {
+                    isStreamOn = serverOn;
+                    isRecording = serverRec;
+                    renderUI();
+
+                    if(isStreamOn) localStorage.setItem('ACTIVE_STREAM_MODE', 'SCREEN');
+                    else if(localStorage.getItem('ACTIVE_STREAM_MODE') === 'SCREEN') localStorage.removeItem('ACTIVE_STREAM_MODE');
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        turnOnBtn.onclick = turnOnScreen;
+        turnOffBtn.onclick = turnOffScreen;
+        startRecBtn.onclick = startRecording;
+        stopRecBtn.onclick = stopRecording;
+        refreshListBtn.onclick = loadRecordingsList;
 
         loadRecordingsList();
+        updateStatus();
+
+        const interval = setInterval(() => {
+            if (!document.querySelector('[data-page="screen"]')) {
+                clearInterval(interval);
+                stopStreaming();
+                return;
+            }
+            updateStatus();
+        }, 3000);
     }
     
-initScreenPage();
-
+    initScreenPage();
 </script>
-
-<style>
-    /* CSS cho nút tròn (btn-circle) nếu theme chưa có */
-    .btn-circle {
-        border-radius: 100%;
-        height: 2.5rem;
-        width: 2.5rem;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .btn-circle.btn-sm {
-        height: 1.8rem;
-        width: 1.8rem;
-        font-size: 0.75rem;
-    }
-</style>

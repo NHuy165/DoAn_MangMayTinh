@@ -737,21 +737,21 @@ def webcam_stop_recording(request):
 @require_http_methods(["GET"])
 def webcam_status(request):
     """
-    API: Lấy trạng thái camera và recording
-    
-    Returns:
-        JSON: {"camera_on": bool, "recording": bool}
+    API: Lấy trạng thái camera. 
+    Luôn trả về keys: {"on": bool, "rec": bool} để JS dễ xử lý.
     """
     client = _get_client(request)
+    # SỬA LẠI: Trả về key khớp với socket client ("on", "rec") thay vì "camera_on"
     if not client:
-        return JsonResponse({"camera_on": False, "recording": False})
+        return JsonResponse({"on": False, "rec": False})
     
     try:
         status = client.webcam_status()
+        # status từ socket trả về đã là {"on": ..., "rec": ...}
         return JsonResponse(status)
     except Exception as e:
         logger.error(f"Get status error: {str(e)}")
-        return JsonResponse({"camera_on": False, "recording": False})
+        return JsonResponse({"on": False, "rec": False})
 
 
 @require_http_methods(["GET"])
@@ -973,8 +973,14 @@ def screen_stop_rec(request):
 
 @require_http_methods(["GET"])
 def screen_get_status(request):
+    """
+    API: Lấy trạng thái màn hình.
+    """
     client = _get_client(request)
-    if not client: return JsonResponse({"stream_on": False, "recording": False})
+    # SỬA LẠI: Trả về key khớp với socket client
+    if not client: 
+        return JsonResponse({"on": False, "rec": False})
+        
     return JsonResponse(client.screen_status())
 
 # Trong file views.py

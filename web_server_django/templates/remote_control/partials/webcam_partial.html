@@ -98,435 +98,346 @@
     function initWebcamPage() {
         if (!document.querySelector('[data-page="webcam"]')) return;
 
-        // ==================== DOM ELEMENTS ====================
+        // --- DOM ELEMENTS ---
         const turnOnBtn = document.getElementById('turn-on-btn');
         const turnOffBtn = document.getElementById('turn-off-btn');
         const startRecBtn = document.getElementById('start-rec-btn');
         const stopRecBtn = document.getElementById('stop-rec-btn');
         const refreshListBtn = document.getElementById('refresh-list-btn');
-        
         const cameraStatus = document.getElementById('camera-status');
         const recordingStatus = document.getElementById('recording-status');
         const durationDisplay = document.getElementById('duration-display');
         const recordingDuration = document.getElementById('recording-duration');
-        
         const previewContainer = document.getElementById('preview-container');
         const webcamPreview = document.getElementById('webcam-preview');
         const recordingsList = document.getElementById('recordings-list');
 
-        // ==================== STATE VARIABLES ====================
+        // --- VARIABLES ---
         let isCameraOn = false;
         let isRecording = false;
         let streamInterval = null;
         let durationInterval = null;
         let recordingStartTime = null;
 
-        // Utility function to help with auto camera turnoff
+        // --- HELPER: SET BUTTON STATE (FIX UI BUG) ---
+        function setBtnState(btn, isEnabled, activeColorClass, text = null) {
+            if (!btn) return;
+            if (text) btn.textContent = text;
+            
+            if (isEnabled) {
+                btn.disabled = false;
+                // Xóa sạch các class gây hiểu lầm
+                btn.classList.remove('bg-gray-400', 'cursor-not-allowed', 'hidden');
+                // Thêm class active
+                const colors = activeColorClass.split(' ');
+                btn.classList.add(...colors);
+            } else {
+                btn.disabled = true;
+                // Xóa class màu active
+                const colors = activeColorClass.split(' ');
+                btn.classList.remove(...colors);
+                // Thêm class disable
+                btn.classList.add('bg-gray-400', 'cursor-not-allowed');
+            }
+        }
 
-        window.performWebcamCleanup = function() {
-                if (isCameraOn) {
-                    console.log("Disconnect detected -> Stopping Webcam UI...");
+        // --- HELPER: RENDER UI ---
+        function renderUI() {
+            // 1. STATE: CAMERA
+            if (isCameraOn) {
+                cameraStatus.textContent = '🟢 ON';
+                cameraStatus.classList.add('text-green-600');
+                previewContainer.classList.remove('hidden');
+
+                // Nút Bật -> Disable
+                setBtnState(turnOnBtn, false, 'bg-green-600 hover:bg-green-700');
+                
+                // Nút Tắt -> Enable (Màu Xám đậm/Đỏ tùy ý, ở đây để xám đậm cho giống nút tắt)
+                setBtnState(turnOffBtn, true, 'bg-gray-800 hover:bg-gray-900');
+
+                if (!streamInterval) startStreaming();
+            } else {
+                cameraStatus.textContent = '⚪ OFF';
+                cameraStatus.classList.remove('text-green-600');
+                previewContainer.classList.add('hidden');
+
+                // Nút Bật -> Enable
+                setBtnState(turnOnBtn, true, 'bg-green-600 hover:bg-green-700');
+                
+                // Nút Tắt -> Disable
+                setBtnState(turnOffBtn, false, 'bg-gray-800 hover:bg-gray-900');
+
+                stopStreaming();
+            }
+
+            // 2. STATE: RECORDING
+            if (isCameraOn) {
+                if (isRecording) {
+                    recordingStatus.textContent = '🔴 RECORDING';
+                    recordingStatus.classList.add('text-red-600');
+                    durationDisplay.classList.remove('hidden');
+
+                    // Ẩn Start, Hiện Stop
+                    startRecBtn.classList.add('hidden');
+                    stopRecBtn.classList.remove('hidden');
                     
-                    // 1. Quan trọng nhất: Ngắt vòng lặp lấy ảnh ngay lập tức
-                    isCameraOn = false; 
+                    // Force Enable nút Stop (Màu đỏ)
+                    setBtnState(stopRecBtn, true, 'bg-red-600 hover:bg-red-700');
+                } else {
+                    recordingStatus.textContent = '⚪ STOPPED';
+                    recordingStatus.classList.remove('text-red-600');
+                    durationDisplay.classList.add('hidden');
 
-                    // 2. Gọi hàm tắt camera có sẵn của bạn để reset giao diện
-                    if (typeof turnOffCamera === 'function') {
-                        turnOffCamera(); 
-                    }
+                    // Hiện Start, Ẩn Stop
+                    startRecBtn.classList.remove('hidden');
+                    stopRecBtn.classList.add('hidden');
+                    
+                    // Force Enable nút Start (Màu đỏ)
+                    setBtnState(startRecBtn, true, 'bg-red-600 hover:bg-red-700');
                 }
-        };
-        
-        // ==================== UTILITY FUNCTIONS ====================
+            } else {
+                startRecBtn.classList.add('hidden');
+                stopRecBtn.classList.add('hidden');
+                durationDisplay.classList.add('hidden');
+            }
+        }
+
+        // --- UTILS ---
         function getCookie(name) {
             let cookieValue = null;
             if (document.cookie && document.cookie !== '') {
-            const cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
                 }
-            }
             }
             return cookieValue;
         }
-        
-        //   function showNotification(type, message) {
-        //     const colors = {'success': '✓', 'error': '✗', 'info': 'ℹ'};
-        //     alert(`${colors[type] || ''} ${message}`);
-        //   }
-        
+
         function updateDuration() {
             if (!recordingStartTime) return;
-            const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
-            const hours = Math.floor(elapsed / 3600);
-            const minutes = Math.floor((elapsed % 3600) / 60);
-            const seconds = elapsed % 60;
+            const now = Date.now();
+            // Tính chênh lệch
+            const elapsed = Math.floor((now - recordingStartTime) / 1000);
+            if (elapsed < 0) return; // Tránh số âm nếu system clock lệch
+
+            const h = Math.floor(elapsed / 3600);
+            const m = Math.floor((elapsed % 3600) / 60);
+            const s = elapsed % 60;
             recordingDuration.textContent = 
-            `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
         }
-        
-        // ==================== CAMERA CONTROL ====================
+
+        // --- API ACTIONS ---
         async function turnOnCamera() {
             const activeStream = localStorage.getItem('ACTIVE_STREAM_MODE');
             if (activeStream === 'SCREEN') {
-                alert("Cannot start Webcam: Screen Recorder is currently active! Please turn off Screen Recorder first.");
+                alert("Cannot start Webcam: Screen Recorder is active!");
                 return;
             }
-
-            turnOnBtn.disabled = true;
-            turnOnBtn.textContent = 'Turning On...';
+            setBtnState(turnOnBtn, false, 'bg-green-600', 'Starting...');
             
             try {
-            const response = await fetch('/remote/api/webcam/on/', {
-                method: 'POST',
-                headers: {
-                'X-CSRFToken': getCookie('csrftoken')
+                const res = await fetch('/remote/api/webcam/on/', {
+                    method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')}
+                });
+                const data = await res.json();
+                if (data.success || data.message.includes('already')) {
+                    localStorage.setItem('ACTIVE_STREAM_MODE', 'WEBCAM');
+                    isCameraOn = true;
+                    setBtnState(turnOnBtn, true, 'bg-green-600', '📷 Turn On Camera'); // Reset text
+                    renderUI(); 
+                    setTimeout(updateStatus, 500); 
+                } else {
+                    alert(data.message);
+                    setBtnState(turnOnBtn, true, 'bg-green-600', '📷 Turn On Camera');
                 }
-            });
-            
-            const data = await response.json();
-            
-            // Success hoặc camera đã bật rồi → Coi như thành công
-            if (data.success || data.message.includes('already ON')) {
-                isCameraOn = true;
-                
-                // --- SET GLOBAL LOCK ---
-                localStorage.setItem('ACTIVE_STREAM_MODE', 'WEBCAM');
-
-                cameraStatus.textContent = '🟢 ON';
-                cameraStatus.classList.add('text-green-600');
-                
-                // Show preview and recording controls
-                previewContainer.classList.remove('hidden');
-                startRecBtn.classList.remove('hidden');
-                
-                // Enable buttons
-                turnOffBtn.disabled = false;
-                turnOffBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
-                turnOffBtn.classList.add('bg-red-600', 'hover:bg-red-700');
-                
-                startRecBtn.disabled = false;
-                startRecBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
-                startRecBtn.classList.add('bg-red-600', 'hover:bg-red-700');
-                
-                // Start streaming preview
-                startStreaming();
-                
-                showNotification('success', data.success ? 'Camera turned on' : 'Camera already on, streaming started');
-            } else {
-                showNotification('error', data.message);
-            }
-            } catch (error) {
-            showNotification('error', 'Failed to turn on camera: ' + error.message);
-            } finally {
-            turnOnBtn.disabled = false;
-            turnOnBtn.textContent = '📷 Turn On Camera';
+            } catch (e) { 
+                console.error(e); 
+                setBtnState(turnOnBtn, true, 'bg-green-600', '📷 Turn On Camera');
             }
         }
-        
+
         async function turnOffCamera() {
-            turnOffBtn.disabled = true;
-            turnOffBtn.textContent = 'Turning Off...';
-            
+            setBtnState(turnOffBtn, false, 'bg-gray-800', 'Stopping...');
             try {
-            // Stop recording if active
-            if (isRecording) {
-                await stopRecording();
-            }
-            
-            const response = await fetch('/remote/api/webcam/off/', {
-                method: 'POST',
-                headers: {
-                'X-CSRFToken': getCookie('csrftoken')
+                if (isRecording) await stopRecording();
+                const res = await fetch('/remote/api/webcam/off/', {
+                    method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')}
+                });
+                const data = await res.json();
+                if (data.success) {
+                    localStorage.removeItem('ACTIVE_STREAM_MODE');
+                    isCameraOn = false;
+                    setBtnState(turnOffBtn, true, 'bg-gray-800', '⏹ Turn Off Camera');
+                    renderUI();
                 }
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                isCameraOn = false;
+            } catch (e) { console.error(e); }
+        }
 
-                // --- REMOVE GLOBAL LOCK ---
-                localStorage.removeItem('ACTIVE_STREAM_MODE');
-
-
-                cameraStatus.textContent = '⚪ OFF';
-                cameraStatus.classList.remove('text-green-600');
-                
-                // Hide preview and recording controls
-                previewContainer.classList.add('hidden');
-                startRecBtn.classList.add('hidden');
-                stopRecBtn.classList.add('hidden');
-                
-                // Update button states
-                turnOffBtn.disabled = true;
-                turnOffBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
-                turnOffBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
-                
-                turnOnBtn.disabled = false;
-                turnOnBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
-                turnOnBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
-                
-                // Stop streaming
-                stopStreaming();
-                
-                showNotification("info", 'Camera turned off');
-            } else {
-                showNotification('error', data.message);
-            }
-            } catch (error) {
-            showNotification('error', 'Failed to turn off camera: ' + error.message);
-            } finally {
-            turnOffBtn.textContent = '⏹ Turn Off Camera';
+        async function startRecording() {
+            setBtnState(startRecBtn, false, 'bg-red-600');
+            try {
+                const res = await fetch('/remote/api/webcam/start-recording/', {
+                    method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')}
+                });
+                const data = await res.json();
+                if (data.success) {
+                    isRecording = true;
+                    // LƯU STORAGE
+                    recordingStartTime = Date.now();
+                    localStorage.setItem('WEBCAM_START_TIME', recordingStartTime);
+                    
+                    // CHẠY NGAY LẬP TỨC (Fix lag 1s)
+                    updateDuration(); 
+                    durationInterval = setInterval(updateDuration, 1000);
+                    renderUI();
+                } else {
+                    alert(data.message);
+                    setBtnState(startRecBtn, true, 'bg-red-600');
+                }
+            } catch (e) { 
+                console.error(e); 
+                setBtnState(startRecBtn, true, 'bg-red-600');
             }
         }
-        
-        // ==================== STREAMING ====================
+
+        async function stopRecording() {
+            setBtnState(stopRecBtn, false, 'bg-red-600', 'Saving...');
+            try {
+                const res = await fetch('/remote/api/webcam/stop-recording/', {
+                    method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')}
+                });
+                const data = await res.json();
+                if (data.success) {
+                    isRecording = false;
+                    clearInterval(durationInterval);
+                    durationInterval = null;
+                    localStorage.removeItem('WEBCAM_START_TIME');
+                    
+                    loadRecordingsList();
+                    renderUI();
+                    alert(`Saved: ${data.filename}`);
+                }
+            } catch (e) { console.error(e); }
+            finally {
+                setBtnState(stopRecBtn, true, 'bg-red-600', '⏹ Stop Recording');
+            }
+        }
+
         function startStreaming() {
-            // Update frame every ~33ms (30 FPS)
+            if (streamInterval) return;
             streamInterval = setInterval(async () => {
-            try {
-                const response = await fetch('/remote/api/webcam/stream/');
-                if (response.ok) {
-                const blob = await response.blob();
-                webcamPreview.src = URL.createObjectURL(blob);
-                }
-            } catch (error) {
-                console.error('Streaming error:', error);
-            }
-            }, 33);
+                if(!isCameraOn) return;
+                try {
+                    const res = await fetch('/remote/api/webcam/stream/');
+                    if (res.ok) {
+                        const blob = await res.blob();
+                        webcamPreview.src = URL.createObjectURL(blob);
+                    }
+                } catch (e) {}
+            }, 66);
         }
-        
+
         function stopStreaming() {
-            if (streamInterval) {
-            clearInterval(streamInterval);
-            streamInterval = null;
-            }
+            if (streamInterval) { clearInterval(streamInterval); streamInterval = null; }
             webcamPreview.src = '';
         }
-        
-        // ==================== RECORDING CONTROL ====================
-        async function startRecording() {
-            startRecBtn.disabled = true;
-            startRecBtn.textContent = 'Starting...';
-            
-            try {
-            const response = await fetch('/remote/api/webcam/start-recording/', {
-                method: 'POST',
-                headers: {
-                'X-CSRFToken': getCookie('csrftoken')
-                }
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                isRecording = true;
-                recordingStatus.textContent = '🔴 RECORDING';
-                recordingStatus.classList.add('text-red-600');
-                
-                // Show duration and start timer
-                durationDisplay.classList.remove('hidden');
-                recordingStartTime = Date.now();
-                durationInterval = setInterval(updateDuration, 1000);
-                
-                // Show stop button, hide start button
-                startRecBtn.classList.add('hidden');
-                stopRecBtn.classList.remove('hidden');
-                stopRecBtn.disabled = false;
-                stopRecBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
-                stopRecBtn.classList.add('bg-red-600', 'hover:bg-red-700');
-                
-                showNotification('success', 'Recording started');
-            } else {
-                showNotification('error', data.message);
-            }
-            } catch (error) {
-            showNotification('error', 'Failed to start recording: ' + error.message);
-            } finally {
-            startRecBtn.disabled = false;
-            startRecBtn.textContent = '🔴 Start Recording';
-            }
-        }
-        
-        async function stopRecording() {
-            stopRecBtn.disabled = true;
-            stopRecBtn.textContent = 'Stopping...';
-            
-            try {
-            const response = await fetch('/remote/api/webcam/stop-recording/', {
-                method: 'POST',
-                headers: {
-                'X-CSRFToken': getCookie('csrftoken')
-                }
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                isRecording = false;
-                recordingStatus.textContent = '⚪ STOPPED';
-                recordingStatus.classList.remove('text-red-600');
-                
-                // Hide duration
-                durationDisplay.classList.add('hidden');
-                if (durationInterval) {
-                clearInterval(durationInterval);
-                durationInterval = null;
-                }
-                recordingStartTime = null;
-                recordingDuration.textContent = '00:00:00';
-                
-                // Show start button, hide stop button
-                stopRecBtn.classList.add('hidden');
-                startRecBtn.classList.remove('hidden');
-                startRecBtn.disabled = false;
-                
-                // Refresh recordings list
-                await loadRecordingsList();
-                
-                showNotification('success', `Recording saved: ${data.file_size}`);
-            } else {
-                showNotification('error', data.message);
-            }
-            } catch (error) {
-            showNotification('error', 'Failed to stop recording: ' + error.message);
-            } finally {
-            stopRecBtn.disabled = false;
-            stopRecBtn.textContent = '⏹ Stop Recording';
-            }
-        }
-        
-        // ==================== RECORDINGS LIST ====================
+
         async function loadRecordingsList() {
             try {
-            const response = await fetch('/remote/api/webcam/list/');
-            const data = await response.json();
-            
-            if (data.success && data.recordings.length > 0) {
-                recordingsList.innerHTML = data.recordings.map(rec => `
-                <tr>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                    ${rec.recorded_at}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    ${rec.filename}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    ${rec.duration}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    ${rec.file_size}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <a href="${rec.file_url}" target="_blank" class="text-blue-600 hover:text-blue-900 dark:text-blue-400 mr-3">View</a>
-                    <a href="${rec.file_url}" download class="text-green-600 hover:text-green-900 dark:text-green-400 mr-3">Download</a>
-                    <button onclick="deleteRecording(${rec.id})" class="text-red-600 hover:text-red-900 dark:text-red-400">Delete</button>
-                    </td>
-                </tr>
-                `).join('');
-            } else {
-                recordingsList.innerHTML = `
-                <tr>
-                    <td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                    No recordings yet. Start recording to create your first video.
-                    </td>
-                </tr>
-                `;
-            }
-            } catch (error) {
-            console.error('Failed to load recordings:', error);
-            }
-        }
-        
-        window.deleteRecording = async function(id) {
-            if (!confirm('Are you sure you want to delete this recording?')) return;
-            
-            try {
-            const response = await fetch(`/remote/api/webcam/delete/${id}/`, {
-                method: 'DELETE',
-                headers: {
-                'X-CSRFToken': getCookie('csrftoken')
+                const res = await fetch('/remote/api/webcam/list/');
+                const data = await res.json();
+                if (data.success && data.recordings.length > 0) {
+                    recordingsList.innerHTML = data.recordings.map(rec => `
+                        <tr>
+                            <td class="px-6 py-4 text-sm text-gray-900 dark:text-white">${rec.recorded_at}</td>
+                            <td class="px-6 py-4 text-sm text-gray-500">${rec.filename}</td>
+                            <td class="px-6 py-4 text-sm text-gray-500">${rec.duration}</td>
+                            <td class="px-6 py-4 text-sm text-gray-500">${rec.file_size}</td>
+                            <td class="px-6 py-4 text-sm font-medium">
+                                <a href="${rec.file_url}" download class="text-green-600 hover:text-green-900 mr-3">Download</a>
+                                <button onclick="deleteRec(${rec.id})" class="text-red-600 hover:text-red-900">Delete</button>
+                            </td>
+                        </tr>`).join('');
+                } else {
+                    recordingsList.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">No recordings yet.</td></tr>`;
                 }
+            } catch (e) { console.error(e); }
+        }
+
+        window.deleteRec = async function(id) {
+            if(!confirm('Delete video?')) return;
+            await fetch(`/remote/api/webcam/delete/${id}/`, {
+                method: 'DELETE', headers: {'X-CSRFToken': getCookie('csrftoken')}
             });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                showNotification('success', 'Recording deleted');
-                await loadRecordingsList();
-            } else {
-                showNotification('error', data.message);
-            }
-            } catch (error) {
-            showNotification('error', 'Failed to delete recording: ' + error.message);
-            }
-        };
-        
-        // ==================== STATUS POLLING ====================
+            loadRecordingsList();
+        }
+
         async function updateStatus() {
             try {
-            const response = await fetch('/remote/api/webcam/status/');
-            const data = await response.json();
-            
-            // Sync UI with actual status
-            if (data.camera_on !== isCameraOn) {
-                // Camera state changed externally
-                if (data.camera_on) {
-                cameraStatus.textContent = '🟢 ON';
-                cameraStatus.classList.add('text-green-600');
+                const res = await fetch('/remote/api/webcam/status/');
+                const data = await res.json();
+                
+                const serverOn = data.on || false;
+                const serverRec = data.rec || false;
+
+                // LOGIC SYNC TIMER
+                if (serverRec) {
+                    const savedTime = localStorage.getItem('WEBCAM_START_TIME');
+                    if (savedTime) {
+                        recordingStartTime = parseInt(savedTime);
+                    } else {
+                        recordingStartTime = Date.now();
+                        localStorage.setItem('WEBCAM_START_TIME', recordingStartTime);
+                    }
+                    
+                    if (!durationInterval) {
+                        // FIX LAG: Gọi hàm updateDuration ngay lập tức
+                        updateDuration();
+                        durationInterval = setInterval(updateDuration, 1000);
+                    }
                 } else {
-                cameraStatus.textContent = '⚪ OFF';
-                cameraStatus.classList.remove('text-green-600');
+                    if (durationInterval) {
+                        clearInterval(durationInterval);
+                        durationInterval = null;
+                        localStorage.removeItem('WEBCAM_START_TIME');
+                    }
                 }
-                isCameraOn = data.camera_on;
-            }
-            
-            if (data.recording !== isRecording) {
-                // Recording state changed externally
-                if (data.recording) {
-                recordingStatus.textContent = '🔴 RECORDING';
-                recordingStatus.classList.add('text-red-600');
-                } else {
-                recordingStatus.textContent = '⚪ STOPPED';
-                recordingStatus.classList.remove('text-red-600');
+
+                if (serverOn !== isCameraOn || serverRec !== isRecording) {
+                    isCameraOn = serverOn;
+                    isRecording = serverRec;
+                    renderUI();
+                    
+                    if(isCameraOn) localStorage.setItem('ACTIVE_STREAM_MODE', 'WEBCAM');
+                    else if(localStorage.getItem('ACTIVE_STREAM_MODE') === 'WEBCAM') localStorage.removeItem('ACTIVE_STREAM_MODE');
                 }
-                isRecording = data.recording;
-            }
-            } catch (error) {
-            console.error('Status update error:', error);
-            }
+            } catch (e) { console.error(e); }
         }
-        
-        // ==================== EVENT LISTENERS ====================
-        if (turnOnBtn) turnOnBtn.onclick = turnOnCamera;
-        if (turnOffBtn) turnOffBtn.onclick = turnOffCamera;
-        if (startRecBtn) startRecBtn.onclick = startRecording;
-        if (stopRecBtn) stopRecBtn.onclick = stopRecording;
-        if (refreshListBtn) refreshListBtn.onclick = loadRecordingsList;
-        
-        // ==================== INITIALIZATION ====================
-        // Load recordings list on page load
+
+        turnOnBtn.onclick = turnOnCamera;
+        turnOffBtn.onclick = turnOffCamera;
+        startRecBtn.onclick = startRecording;
+        stopRecBtn.onclick = stopRecording;
+        refreshListBtn.onclick = loadRecordingsList;
+
         loadRecordingsList();
-        
-        // Poll status every 3 seconds
-        const webcamStatusInterval = setInterval(() => {
-            // Kiểm tra: Nếu không tìm thấy trang webcam (đã chuyển tab)
+        updateStatus();
+
+        const interval = setInterval(() => {
             if (!document.querySelector('[data-page="webcam"]')) {
-                console.log("Webcam tab closed -> Killing status timer");
-                clearInterval(webcamStatusInterval); // Dừng vòng lặp
+                clearInterval(interval);
+                stopStreaming();
                 return;
             }
-            
             updateStatus();
         }, 3000);
-        
-        // Initial status check
-        updateStatus();
     }
 
-initWebcamPage();
+    initWebcamPage();
 </script>
