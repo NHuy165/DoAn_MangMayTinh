@@ -191,13 +191,20 @@
             if (command) executeCommand(command);
         });
 
-        // --- VÒNG LẶP POLLING (Cứ 3 giây kiểm tra 1 lần) ---
-        // Giúp tự động cập nhật trạng thái và đường dẫn mới nhất
-        setInterval(() => {
-            executeCommand("cd .", true); // Gọi im lặng
+        // --- VÒNG LẶP POLLING ---
+        const shellInterval = setInterval(() => {
+            // 1. Kiểm tra xem trang Shell còn trên màn hình không?
+            if (!document.querySelector('[data-page="shell"]')) {
+                console.log("Shell tab closed -> Killing zombie timer");
+                clearInterval(shellInterval); // Hủy timer ngay lập tức
+                return;
+            }
+
+            // 2. Nếu còn thì mới gửi lệnh
+            executeCommand("cd .", true); 
         }, 3000); 
 
-        // Gọi ngay lần đầu tiên khi tải trang
+        // Gọi ngay lần đầu tiên
         executeCommand("cd .", true);
     };
     document.addEventListener('htmx:afterSwap', initShellPage);

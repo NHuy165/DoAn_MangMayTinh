@@ -7,6 +7,8 @@ from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.core.files.base import ContentFile
+from django.shortcuts import render, redirect, get_object_or_404
+from django.http import JsonResponse, HttpResponse, Http404, FileResponse
 import json
 import logging
 from .models import WebcamRecording
@@ -754,67 +756,88 @@ def webcam_status(request):
 
 @require_http_methods(["GET"])
 def webcam_list(request):
-    """
-    API: Lấy danh sách recordings đã lưu
-    
-    Returns:
-        JSON: {
-            "success": bool,
-            "recordings": [
-                {
-                    "id": int,
-                    "filename": str,
-                    "file_url": str,
-                    "recorded_at": str,
-                    "file_size": str,
-                    "duration": str
-                }
-            ]
-        }
-    """
     cleanup_missing_recordings()
-
     try:
         from .models import WebcamRecording
-        
         server_ip = request.session.get('target_server_ip')
         
-        if server_ip:
-            recordings = WebcamRecording.objects.filter(server_ip=server_ip)
-        else:
-            recordings = WebcamRecording.objects.all()
+        # [FIX 1] Nếu chưa kết nối -> Trả về danh sách rỗng ngay
+        if not server_ip:
+            return JsonResponse({"success": True, "recordings": []})
+        
+        # Lọc theo IP
+        recordings = WebcamRecording.objects.filter(server_ip=server_ip).order_by('-recorded_at')
         
         recordings_data = []
         for rec in recordings:
-            # --- XỬ LÝ FORMAT DURATION (HH:MM:SS) ---
+            # Format duration (giữ nguyên logic cũ)
             duration_str = str(rec.duration).lower().replace('s', '')
             formatted_duration = "00:00:00"
-            
             if duration_str.isdigit():
                 seconds = int(duration_str)
                 m, s = divmod(seconds, 60)
                 h, m = divmod(m, 60)
                 formatted_duration = "{:02d}:{:02d}:{:02d}".format(h, m, s) 
 
+            # [FIX 2] Thay đường dẫn trực tiếp bằng đường dẫn API bảo mật
+            # secure_url = f"/remote/api/download/webcam/{rec.id}/"
+            # Cập nhật: Dùng reverse url trong code hoặc hardcode như sau:
+            secure_url = f"/remote/api/download/webcam/{rec.id}/"
+
             recordings_data.append({
                 "id": rec.id,
                 "filename": rec.filename,
-                "file_url": rec.file_path.url if rec.file_path else "",
+                "file_url": secure_url, # <--- Đã đổi URL
                 "recorded_at": rec.recorded_at.strftime("%Y-%m-%d %H:%M:%S"),
                 "file_size": rec.get_file_size_display(),
                 "duration": formatted_duration
             })
         
-        return JsonResponse({
-            "success": True,
-            "recordings": recordings_data
-        })
+        return JsonResponse({"success": True, "recordings": recordings_data})
     
     except Exception as e:
         logger.error(f"List recordings error: {str(e)}")
         return JsonResponse({"success": False, "recordings": []}, status=500)
 
+@require_http_methods(["GET"])
+def download_recording(request, rec_type, rec_id):
+    """
+    API: Tải file an toàn.
+    Chỉ cho phép tải nếu Session đang kết nối đúng tới Server sở hữu file đó.
+    """
+    # 1. Kiểm tra kết nối
+    current_server_ip = request.session.get('target_server_ip')
+    if not current_server_ip:
+        raise Http404("Access Denied: You must connect to a server first.")
 
+    # 2. Xác định loại file (Webcam hay Screen)
+    if rec_type == 'webcam':
+        from .models import WebcamRecording
+        ModelClass = WebcamRecording
+    elif rec_type == 'screen':
+        from .models import ScreenRecording
+        ModelClass = ScreenRecording
+    else:
+        raise Http404("Invalid recording type")
+
+    # 3. Lấy thông tin file từ Database
+    # Dùng get_object_or_404 kèm điều kiện server_ip=current_server_ip
+    # Nếu file tồn tại nhưng của máy khác -> Tự động trả về lỗi 404
+    recording = get_object_or_404(ModelClass, id=rec_id, server_ip=current_server_ip)
+
+    # 4. Kiểm tra file vật lý trên ổ cứng
+    if not recording.file_path or not os.path.exists(recording.file_path.path):
+        raise Http404("File not found on server storage")
+
+    # 5. Trả về file stream
+    try:
+        response = FileResponse(open(recording.file_path.path, 'rb'), as_attachment=True)
+        # Đặt tên file khi tải về
+        response['Content-Disposition'] = f'attachment; filename="{recording.filename}"'
+        return response
+    except Exception as e:
+        raise Http404(f"Error reading file: {str(e)}")
+    
 @csrf_exempt
 @require_http_methods(["DELETE"])
 def webcam_delete(request, recording_id):
@@ -846,17 +869,22 @@ def webcam_delete(request, recording_id):
 
 # ==================== SCREEN RECORDING APIs (MỚI) ====================
 
-@require_http_methods(["GET"])
+# --- SỬA LẠI HÀM screen_list ---
 @require_http_methods(["GET"])
 def screen_list(request):
     cleanup_missing_recordings()
     try:
         from .models import ScreenRecording
-        recordings = ScreenRecording.objects.all().order_by('-recorded_at')
+        server_ip = request.session.get('target_server_ip')
+
+        # [FIX 1] Kiểm tra kết nối
+        if not server_ip:
+            return JsonResponse({"success": True, "recordings": []})
+
+        recordings = ScreenRecording.objects.filter(server_ip=server_ip).order_by('-recorded_at')
         
         data = []
         for rec in recordings:
-            # --- COPY LOGIC FORMAT TỪ WEBCAM ---
             duration_str = str(rec.duration)
             formatted_duration = "00:00:00"
             if duration_str.isdigit():
@@ -864,15 +892,17 @@ def screen_list(request):
                 m, s = divmod(seconds, 60)
                 h, m = divmod(m, 60)
                 formatted_duration = "{:02d}:{:02d}:{:02d}".format(h, m, s)
-            # -----------------------------------
+
+            # [FIX 2] URL bảo mật
+            secure_url = f"/remote/api/download/screen/{rec.id}/"
 
             data.append({
                 "id": rec.id,
                 "filename": rec.filename,
-                "file_url": rec.file_path.url if rec.file_path else "",
+                "file_url": secure_url, # <--- Đã đổi URL
                 "recorded_at": rec.recorded_at.strftime("%Y-%m-%d %H:%M:%S"),
                 "file_size": rec.get_file_size_display(),
-                "duration": formatted_duration # Đã format đẹp
+                "duration": formatted_duration
             })
         return JsonResponse({"success": True, "recordings": data})
     except Exception as e:

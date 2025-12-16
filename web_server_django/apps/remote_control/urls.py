@@ -58,6 +58,10 @@ urlpatterns = [
     # API Endpoints - Screenshot
     path('api/screenshot/', views.take_screenshot, name='api_screenshot'),
     
+    
+    # API Endpoints - Download recording
+    path('api/download/<str:rec_type>/<int:rec_id>/', views.download_recording, name='api_secure_download'),
+    
     # API Endpoints - Webcam
     path('api/webcam/on/', views.webcam_on, name='api_webcam_on'),
     path('api/webcam/off/', views.webcam_off, name='api_webcam_off'),

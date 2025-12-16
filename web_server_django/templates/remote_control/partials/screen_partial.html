@@ -377,16 +377,16 @@
             }
         };
 
-        refreshListBtn.addEventListener('click', loadRecordingsList);
-        turnOnBtn.addEventListener('click', turnOnScreen);
-        turnOffBtn.addEventListener('click', turnOffScreen);
-        startRecBtn.addEventListener('click', startRecording);
-        stopRecBtn.addEventListener('click', stopRecording);
+        if (turnOnBtn) turnOnBtn.onclick = turnOnScreen;
+        if (turnOffBtn) turnOffBtn.onclick = turnOffScreen;
+        if (startRecBtn) startRecBtn.onclick = startRecording;
+        if (stopRecBtn) stopRecBtn.onclick = stopRecording;
+        if (refreshListBtn) refreshListBtn.onclick = loadRecordingsList;
 
         loadRecordingsList();
     }
-document.addEventListener('htmx:afterSwap', initScreenPage);
-document.addEventListener('DOMContentLoaded', initScreenPage);
+    
+initScreenPage();
 
 </script>
 

@@ -121,8 +121,7 @@ class UDPDiscoveryClient:
         Parse response từ C# Server
         
         Format response từ C# (có thể là 1 trong 2 dạng):
-        1. Plain text: "HOSTNAME|IP_ADDRESS"
-           Ví dụ: "DESKTOP-ABC|192.168.1.10"
+        1. Plain text: "HOSTNAME|IP_ADDRESS|STATUS"
         
         2. JSON: {"hostname": "DESKTOP-ABC", "ip": "192.168.1.10", "port": 5656}
         
@@ -145,19 +144,27 @@ class UDPDiscoveryClient:
                 return {
                     'ip': json_data.get('ip', addr[0]),  # Fallback to sender IP
                     'name': json_data.get('hostname', 'Unknown'),
-                    'port': json_data.get('port', 5656)
+                    'port': json_data.get('port', 5656),
+                    'status': json_data.get('status', 'READY')
                 }
             except json.JSONDecodeError:
                 pass
             
-            # FALLBACK: PARSE PLAIN TEXT FORMAT "HOSTNAME|IP"
+            # FALLBACK: PARSE PLAIN TEXT FORMAT "HOSTNAME|IP|STATUS"
             if '|' in response:
                 parts = response.split('|')
+                
+                # Lấy status nếu có (phần tử thứ 3), nếu không thì mặc định là READY
+                status = "READY"
+                if len(parts) >= 3:
+                    status = parts[2].strip()
+                
                 if len(parts) >= 2:
                     return {
                         'ip': parts[1].strip(),
                         'name': parts[0].strip(),
-                        'port': 5656  # Default port
+                        'port': 5656,
+                        'status': status  # Thêm trường status vào kết quả
                     }
             
             # FALLBACK: Chỉ có hostname hoặc message khác
@@ -165,7 +172,8 @@ class UDPDiscoveryClient:
             return {
                 'ip': addr[0],
                 'name': response if response else 'Unknown Server',
-                'port': 5656
+                'port': 5656,
+                'status': 'UNKNOWN'
             }
         
         except Exception as e:

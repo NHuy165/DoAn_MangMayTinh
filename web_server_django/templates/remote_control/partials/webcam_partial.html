@@ -502,23 +502,31 @@
         }
         
         // ==================== EVENT LISTENERS ====================
-        turnOnBtn.addEventListener('click', turnOnCamera);
-        turnOffBtn.addEventListener('click', turnOffCamera);
-        startRecBtn.addEventListener('click', startRecording);
-        stopRecBtn.addEventListener('click', stopRecording);
-        refreshListBtn.addEventListener('click', loadRecordingsList);
+        if (turnOnBtn) turnOnBtn.onclick = turnOnCamera;
+        if (turnOffBtn) turnOffBtn.onclick = turnOffCamera;
+        if (startRecBtn) startRecBtn.onclick = startRecording;
+        if (stopRecBtn) stopRecBtn.onclick = stopRecording;
+        if (refreshListBtn) refreshListBtn.onclick = loadRecordingsList;
         
         // ==================== INITIALIZATION ====================
         // Load recordings list on page load
         loadRecordingsList();
         
         // Poll status every 3 seconds
-        setInterval(updateStatus, 3000);
+        const webcamStatusInterval = setInterval(() => {
+            // Kiểm tra: Nếu không tìm thấy trang webcam (đã chuyển tab)
+            if (!document.querySelector('[data-page="webcam"]')) {
+                console.log("Webcam tab closed -> Killing status timer");
+                clearInterval(webcamStatusInterval); // Dừng vòng lặp
+                return;
+            }
+            
+            updateStatus();
+        }, 3000);
         
         // Initial status check
         updateStatus();
     }
 
-document.addEventListener('htmx:afterSwap', initWebcamPage);
-document.addEventListener('DOMContentLoaded', initWebcamPage);
+initWebcamPage();
 </script>
