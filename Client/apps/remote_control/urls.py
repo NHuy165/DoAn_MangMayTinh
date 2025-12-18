@@ -87,13 +87,13 @@ urlpatterns = [
     
     # Screen Recording URLs
     path('screen/', views.screen_page, name='screen'), # Đường dẫn vào trang web
-    path('api/screen/list', views.screen_list, name='screen_list'), # API lấy danh sách video
+    path('api/screen/list/', views.screen_list, name='screen_list'), # API lấy danh sách video
     path('api/screen/on', views.screen_stream_on, name='screen_on'),
     path('api/screen/off', views.screen_stream_off, name='screen_off'),
     path('api/screen/stream', views.screen_stream_frame, name='screen_stream'),
     path('api/screen/record/start', views.screen_start_rec, name='screen_rec_start'),
     path('api/screen/record/stop', views.screen_stop_rec, name='screen_rec_stop'),
-    path('api/screen/status', views.screen_get_status, name='screen_status'),
+    path('api/screen/status/', views.screen_get_status, name='screen_status'),
     path('api/screen/delete/<int:recording_id>/', views.screen_delete, name='screen_delete'),
 
     # API Dashboard Stats

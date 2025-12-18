@@ -111,6 +111,7 @@
         const previewContainer = document.getElementById('preview-container');
         const webcamPreview = document.getElementById('webcam-preview');
         const recordingsList = document.getElementById('recordings-list');
+        const originalStopBtnHtml = stopRecBtn.innerHTML;
 
         // --- VARIABLES ---
         let isCameraOn = false;
@@ -143,36 +144,35 @@
 
         // --- HELPER: RENDER UI ---
         function renderUI() {
-            // 1. STATE: CAMERA
+            // --- PHẦN 1: TRẠNG THÁI CAMERA (ON/OFF) ---
             if (isCameraOn) {
+                // Camera Bật
                 cameraStatus.textContent = '🟢 ON';
                 cameraStatus.classList.add('text-green-600');
                 previewContainer.classList.remove('hidden');
 
-                // Nút Bật -> Disable
+                // Disable nút Bật, Enable nút Tắt
                 setBtnState(turnOnBtn, false, 'bg-green-600 hover:bg-green-700');
-                
-                // Nút Tắt -> Enable (Màu Xám đậm/Đỏ tùy ý, ở đây để xám đậm cho giống nút tắt)
                 setBtnState(turnOffBtn, true, 'hover:bg-gray-900');
 
                 if (!streamInterval) startStreaming();
             } else {
+                // Camera Tắt
                 cameraStatus.textContent = '⚪ OFF';
                 cameraStatus.classList.remove('text-green-600');
                 previewContainer.classList.add('hidden');
 
-                // Nút Bật -> Enable
+                // Enable nút Bật, Disable nút Tắt
                 setBtnState(turnOnBtn, true, 'bg-green-600 hover:bg-green-700');
-                
-                // Nút Tắt -> Disable
                 setBtnState(turnOffBtn, false, 'bg-gray-800 hover:bg-gray-900');
 
                 stopStreaming();
             }
 
-            // 2. STATE: RECORDING
+            // --- PHẦN 2: TRẠNG THÁI RECORDING ---
             if (isCameraOn) {
                 if (isRecording) {
+                    // Đang Ghi hình
                     recordingStatus.textContent = '🔴 RECORDING';
                     recordingStatus.classList.add('text-red-600');
                     durationDisplay.classList.remove('hidden');
@@ -181,9 +181,13 @@
                     startRecBtn.classList.add('hidden');
                     stopRecBtn.classList.remove('hidden');
                     
-                    // Force Enable nút Stop (Màu đỏ)
+                    // [QUAN TRỌNG] Reset trạng thái nút Stop (Sửa lỗi hiện chữ "Saving...")
+                    stopRecBtn.disabled = false;
+                    stopRecBtn.innerHTML = originalStopBtnHtml;
+
                     setBtnState(stopRecBtn, true, 'bg-red-600 hover:bg-red-700');
                 } else {
+                    // Đã dừng Ghi hình
                     recordingStatus.textContent = '⚪ STOPPED';
                     recordingStatus.classList.remove('text-red-600');
                     durationDisplay.classList.add('hidden');
@@ -191,11 +195,11 @@
                     // Hiện Start, Ẩn Stop
                     startRecBtn.classList.remove('hidden');
                     stopRecBtn.classList.add('hidden');
-                    
-                    // Force Enable nút Start (Màu đỏ)
+
                     setBtnState(startRecBtn, true, 'bg-red-600 hover:bg-red-700');
                 }
             } else {
+                // Nếu Camera tắt -> Ẩn toàn bộ nút Recording
                 startRecBtn.classList.add('hidden');
                 stopRecBtn.classList.add('hidden');
                 durationDisplay.classList.add('hidden');

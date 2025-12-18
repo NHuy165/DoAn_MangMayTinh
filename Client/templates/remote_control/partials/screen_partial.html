@@ -107,7 +107,8 @@
         const previewContainer = document.getElementById('preview-container');
         const screenPreview = document.getElementById('screen-preview');
         const recordingsList = document.getElementById('recordings-list');
-
+        const originalStopBtnHtml = stopRecBtn.innerHTML;
+        
         let isStreamOn = false;
         let isRecording = false;
         let streamInterval = null;
@@ -133,51 +134,62 @@
 
         // --- RENDER UI ---
         function renderUI() {
+            // --- PHẦN 1: TRẠNG THÁI STREAM (ON/OFF) ---
             if (isStreamOn) {
+                // Đang Stream
                 streamStatus.textContent = '🟢 ON';
                 streamStatus.classList.add('text-green-600');
                 previewContainer.classList.remove('hidden');
 
-                // Nút Bật -> Disable
+                // Disable nút Bật, Enable nút Tắt
                 setBtnState(turnOnBtn, false, 'bg-green-600 hover:bg-green-700', 'Screen On');
-                
-                // Nút Tắt -> Enable
                 setBtnState(turnOffBtn, true, 'bg-red-600 hover:bg-red-700');
 
                 if (!streamInterval) startStreaming();
             } else {
+                // Tắt Stream
                 streamStatus.textContent = '⚪ OFF';
                 streamStatus.classList.remove('text-green-600');
                 previewContainer.classList.add('hidden');
 
-                // Nút Bật -> Enable
+                // Enable nút Bật, Disable nút Tắt
                 setBtnState(turnOnBtn, true, 'bg-green-600 hover:bg-green-700', '🖥 Turn On Screen');
-                
-                // Nút Tắt -> Disable
                 setBtnState(turnOffBtn, false, 'bg-red-600 hover:bg-red-700');
 
                 stopStreaming();
             }
 
+            // --- PHẦN 2: TRẠNG THÁI RECORDING (Chỉ hiện khi Stream ON) ---
             if (isStreamOn) {
                 if (isRecording) {
+                    // Đang Ghi hình
                     recordingStatus.textContent = '🔴 RECORDING';
                     recordingStatus.classList.add('text-red-600');
                     durationDisplay.classList.remove('hidden');
 
+                    // Ẩn nút Start, Hiện nút Stop
                     startRecBtn.classList.add('hidden');
                     stopRecBtn.classList.remove('hidden');
+                    
+                    // [QUAN TRỌNG] Reset trạng thái nút Stop (Sửa lỗi hiện chữ "Saving...")
+                    stopRecBtn.disabled = false;
+                    stopRecBtn.innerHTML = originalStopBtnHtml; 
+                    
                     setBtnState(stopRecBtn, true, 'bg-red-600 hover:bg-red-700');
                 } else {
+                    // Đã dừng Ghi hình
                     recordingStatus.textContent = '⚪ STOPPED';
                     recordingStatus.classList.remove('text-red-600');
                     durationDisplay.classList.add('hidden');
 
+                    // Hiện nút Start, Ẩn nút Stop
                     startRecBtn.classList.remove('hidden');
                     stopRecBtn.classList.add('hidden');
+
                     setBtnState(startRecBtn, true, 'bg-red-600 hover:bg-red-700');
                 }
             } else {
+                // Nếu Stream tắt -> Ẩn toàn bộ nút Recording
                 startRecBtn.classList.add('hidden');
                 stopRecBtn.classList.add('hidden');
                 durationDisplay.classList.add('hidden');
