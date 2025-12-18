@@ -169,11 +169,48 @@
         </div>
     </div>
 
-    <script>
+<script>
+        /**
+         * Hàm kiểm tra trạng thái Stream thật sự từ Server
+         * Chạy TỰ ĐỘNG ngay khi trang load để dọn dẹp các trạng thái "Zombie" (cũ)
+         */
+        (function checkAndCleanStaleState() {
+            const currentMode = localStorage.getItem('ACTIVE_STREAM_MODE');
+            
+            // Nếu không có mode nào đang được lưu, không cần làm gì
+            if (!currentMode) return;
+            
+            console.log("Checking stream state sanity for:", currentMode);
+            
+            // Map mode sang API endpoint để check
+            let url = '';
+            if (currentMode === 'SCREEN') url = '/remote/api/screen/status';
+            else if (currentMode === 'WEBCAM') url = '/remote/api/webcam/status';
+            
+            if(url) {
+                fetch(url)
+                    .then(r => r.json())
+                    .then(data => {
+                        // Nếu server báo là KHÔNG quay (rec=false), mà localStorage đang lưu là CÓ
+                        // HOẶC nếu cả hai đều tắt (on=false, rec=false)
+                        // -> Nghĩa là trạng thái trong Browser là "Zombie" -> Xóa ngay
+                        if (!data.rec) {
+                            console.warn("Found stale state (Server: Not Rec, Local: " + currentMode + "). Clearing...");
+                            localStorage.removeItem('ACTIVE_STREAM_MODE');
+                        }
+                    })
+                    .catch(e => {
+                        // Nếu lỗi kết nối (ví dụ: chưa connect server) -> Xóa luôn cho an toàn
+                        // Để người dùng còn thao tác được
+                        console.error("Connection check failed/Not connected. Resetting state.", e);
+                        localStorage.removeItem('ACTIVE_STREAM_MODE');
+                    });
+            }
+        })();
+
         /**
         * Hàm kiểm tra xung đột Stream
         * Được gọi trực tiếp trong sự kiện onclick
-        * SỬA LỖI HTMX: Thêm stopImmediatePropagation để chắc chắn chặn HTMX
         */
         function validateStreamNavigation(event, conflictMode, message) {
             const currentMode = localStorage.getItem('ACTIVE_STREAM_MODE');
@@ -184,7 +221,6 @@
                 // Ngăn chặn sự kiện lan tỏa
                 event.preventDefault();
                 event.stopPropagation();
-                // Lệnh này quan trọng để chặn HTMX (nếu nó lắng nghe sau)
                 if (event.stopImmediatePropagation) {
                     event.stopImmediatePropagation();
                 }
@@ -193,23 +229,19 @@
             return true;
         }
 
-        // Lắng nghe sự kiện htmx:beforeRequest để chặn chắc chắn hơn nếu onclick bị bypass
         document.body.addEventListener('htmx:beforeRequest', function(evt) {
-            // Lấy element đang được kích hoạt
             let trigger = evt.detail.elt;
             let path = trigger.getAttribute('hx-get');
             let currentMode = localStorage.getItem('ACTIVE_STREAM_MODE');
 
-            // Nếu đang định vào trang Webcam mà Screen đang chạy
             if (path && path.includes('/remote/webcam/') && currentMode === 'SCREEN') {
                 alert('Screen Recording đang chạy! Vui lòng tắt quay màn hình trước khi bật Webcam.');
-                evt.preventDefault(); // Chặn request HTMX
+                evt.preventDefault();
             }
             
-            // Nếu đang định vào trang Screen mà Webcam đang chạy
             if (path && path.includes('/remote/screen/') && currentMode === 'WEBCAM') {
                 alert('Webcam đang chạy! Vui lòng tắt Webcam trước khi chuyển sang Quay màn hình.');
-                evt.preventDefault(); // Chặn request HTMX
+                evt.preventDefault();
             }
         });
     </script>

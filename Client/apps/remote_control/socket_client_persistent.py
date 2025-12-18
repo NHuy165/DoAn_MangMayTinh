@@ -389,9 +389,10 @@ class PersistentRemoteClient:
                 
                 parts = response.split('|')
                 def get(i, d="?"): return parts[i] if len(parts) > i else d
-                
+                self.hostname = get(4, "Unknown_Host")
                 data = {
                     "cpu_load": get(0, "0"), "ram_free": get(1, "0"), "battery": get(2, "Unk"),
+                    "hostname": self.hostname,
                     "uptime": get(3, "0d"), "hostname": get(4, "Unk"), "os_info": get(5, "Unk"),
                     "internal_ip": get(6, "Unk"), "cpu_name": get(7, "CPU"), "gpu_name": get(8, "GPU"),
                     "ram_total": get(9, "?"), "disk_info": get(10, "Drive"), "screen_res": get(11, "Res"),

@@ -242,6 +242,11 @@ def connect_server(request):
         if client and client.connected:
             # Reset CMD ngay khi vừa kết nối
             client.shell_reset()
+            
+            try:
+                client.get_system_stats()
+            except:
+                pass # Kệ nó nếu lỗi, sẽ check lại lúc lưu file sau
 
             return JsonResponse({
                 "success": True,
@@ -696,36 +701,49 @@ def webcam_stop_recording(request):
         
         # Lưu video vào file system và DB
         from .models import WebcamRecording
+        from django.core.files.base import ContentFile
         
-        filename = result.get('filename', 'unknown.avi')
-        video_data = result.get('video_data', b'')
+        server_ip = request.session.get('target_server_ip', 'unknown')
+        
+        host_name = getattr(client, 'hostname', 'Unknown')
+        if not host_name or "Unknown" in host_name:
+            try:
+                # Gọi hàm này để cập nhật self.hostname trong client
+                client.get_system_stats()
+                # Lấy lại tên mới
+                host_name = getattr(client, 'hostname', 'Unknown')
+            except: pass
+            
+        safe_host = "".join([c for c in host_name if c.isalnum() or c in '-_'])
+        raw_filename = result.get('filename', 'webcam.avi')
+        final_filename = f"{safe_host}_{raw_filename}"
+        
         file_size = result.get('file_size', 0)
-        
-        # Lấy duration từ kết quả trả về (mặc định 0 nếu không có)
         duration_sec = result.get('duration', 0)
-
+        
+        video_data = result.get('video_data', b'')
         if not video_data:
             return JsonResponse({"success": False, "message": "No video data received"})
         
         # Tạo record trong DB
-        server_ip = request.session.get('target_server_ip', 'unknown')
+        
         recording = WebcamRecording(
             server_ip=server_ip,
-            filename=filename,
+            filename=final_filename,
             file_size=file_size,
             duration=duration_sec
         )
         
         # Lưu file (Django tự động tạo thư mục theo upload_to)
-        recording.file_path.save(filename, ContentFile(video_data), save=True)
+        recording.file_path.save(final_filename, ContentFile(video_data), save=True)
         
-        logger.info(f"Saved recording: {filename}, size: {file_size} bytes")
+        logger.info(f"Saved recording: {final_filename}, size: {file_size} bytes")
         
         return JsonResponse({
             "success": True,
             "message": "Recording saved successfully",
             "recording_id": recording.id,
-            "filename": filename,
+            "filename": final_filename,
             "file_size": recording.get_file_size_display()
         })
     
@@ -759,14 +777,9 @@ def webcam_list(request):
     cleanup_missing_recordings()
     try:
         from .models import WebcamRecording
-        server_ip = request.session.get('target_server_ip')
-        
-        # [FIX 1] Nếu chưa kết nối -> Trả về danh sách rỗng ngay
-        if not server_ip:
-            return JsonResponse({"success": True, "recordings": []})
         
         # Lọc theo IP
-        recordings = WebcamRecording.objects.filter(server_ip=server_ip).order_by('-recorded_at')
+        recordings = WebcamRecording.objects.all().order_by('-recorded_at')
         
         recordings_data = []
         for rec in recordings:
@@ -790,7 +803,8 @@ def webcam_list(request):
                 "file_url": secure_url, # <--- Đã đổi URL
                 "recorded_at": rec.recorded_at.strftime("%Y-%m-%d %H:%M:%S"),
                 "file_size": rec.get_file_size_display(),
-                "duration": formatted_duration
+                "duration": formatted_duration,
+                "server_ip": rec.server_ip
             })
         
         return JsonResponse({"success": True, "recordings": recordings_data})
@@ -803,13 +817,8 @@ def webcam_list(request):
 def download_recording(request, rec_type, rec_id):
     """
     API: Tải file an toàn.
-    Chỉ cho phép tải nếu Session đang kết nối đúng tới Server sở hữu file đó.
     """
-    # 1. Kiểm tra kết nối
-    current_server_ip = request.session.get('target_server_ip')
-    if not current_server_ip:
-        raise Http404("Access Denied: You must connect to a server first.")
-
+    
     # 2. Xác định loại file (Webcam hay Screen)
     if rec_type == 'webcam':
         from .models import WebcamRecording
@@ -823,7 +832,7 @@ def download_recording(request, rec_type, rec_id):
     # 3. Lấy thông tin file từ Database
     # Dùng get_object_or_404 kèm điều kiện server_ip=current_server_ip
     # Nếu file tồn tại nhưng của máy khác -> Tự động trả về lỗi 404
-    recording = get_object_or_404(ModelClass, id=rec_id, server_ip=current_server_ip)
+    recording = get_object_or_404(ModelClass, id=rec_id)
 
     # 4. Kiểm tra file vật lý trên ổ cứng
     if not recording.file_path or not os.path.exists(recording.file_path.path):
@@ -875,13 +884,8 @@ def screen_list(request):
     cleanup_missing_recordings()
     try:
         from .models import ScreenRecording
-        server_ip = request.session.get('target_server_ip')
 
-        # [FIX 1] Kiểm tra kết nối
-        if not server_ip:
-            return JsonResponse({"success": True, "recordings": []})
-
-        recordings = ScreenRecording.objects.filter(server_ip=server_ip).order_by('-recorded_at')
+        recordings = ScreenRecording.objects.all().order_by('-recorded_at')
         
         data = []
         for rec in recordings:
@@ -902,7 +906,8 @@ def screen_list(request):
                 "file_url": secure_url, # <--- Đã đổi URL
                 "recorded_at": rec.recorded_at.strftime("%Y-%m-%d %H:%M:%S"),
                 "file_size": rec.get_file_size_display(),
-                "duration": formatted_duration
+                "duration": formatted_duration,
+                "server_ip": rec.server_ip
             })
         return JsonResponse({"success": True, "recordings": data})
     except Exception as e:
@@ -949,8 +954,16 @@ def screen_stop_rec(request):
         from .models import ScreenRecording
         from django.core.files.base import ContentFile
         
-        filename = result.get('filename', 'unknown.avi')
-        final_filename = "SCREEN_" + filename 
+        host_name = getattr(client, 'hostname', 'Unknown')
+        if not host_name or "Unknown" in host_name:
+            try:
+                client.get_system_stats()
+                host_name = getattr(client, 'hostname', 'Unknown')
+            except: pass
+        safe_host = "".join([c for c in host_name if c.isalnum() or c in '-_'])
+        
+        raw_filename = result.get('filename', 'screen.avi')
+        final_filename = f"{safe_host}_SCREEN_{raw_filename}"
         
         rec = ScreenRecording(
             server_ip=request.session.get('target_server_ip', 'unknown'),
