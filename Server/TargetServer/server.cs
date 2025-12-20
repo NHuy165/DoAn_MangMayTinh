@@ -569,10 +569,8 @@ namespace ServerApp
 
                             // === TẠO RESPONSE MESSAGE ===
 
-                            // --- LOGIC MỚI: KIỂM TRA TRẠNG THÁI ---
-                            string status = isClientConnected ? "BUSY" : "READY";
-                            // Format: "HOSTNAME|IP_ADDRESS|STATUS"
-                            string response = $"{hostname}|{serverIp}|{status}";
+                            // Format: "HOSTNAME|IP_ADDRESS"
+                            string response = $"{hostname}|{serverIp}";
 
                             // Encode string → bytes
                             byte[] responseData = Encoding.UTF8.GetBytes(response);

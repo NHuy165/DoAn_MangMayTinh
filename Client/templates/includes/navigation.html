@@ -408,6 +408,20 @@
             showNotification("warning", `⚠️ Cannot disconnect while ${activeStream} is active.`);
             return;
         }
+
+        // Check keylogger
+        if (localStorage.getItem('KEYLOG_HOOKED') === 'true') {
+            showNotification("warning", "⚠️ Cannot disconnect: Keylogger is running (Hooked).");
+            // Tự động chuyển hướng user về trang Keylogger để tắt cho tiện
+            if (typeof htmx !== 'undefined') htmx.ajax('GET', '/remote/keylogger/', '#main-content');
+            return;
+        }
+
+        if (localStorage.getItem('keylog_auto_update') === 'true') {
+            showNotification("warning", "⚠️ Cannot disconnect: Keylog Auto Update is ON.");
+            if (typeof htmx !== 'undefined') htmx.ajax('GET', '/remote/keylogger/', '#main-content');
+            return;
+        }
         
         isBusy = true;
         disconnectBtn.disabled = true;

@@ -282,78 +282,7 @@ def disconnect_server(request):
     try:
         client = _get_client(request)
         if client and client.connected:
-            
-            # ================= 1. XỬ LÝ WEBCAM (AUTO SAVE + OFF) =================
-            try:
-                # 1.1 Kiểm tra trạng thái
-                status = client.webcam_status()
-                
-                # 1.2 Nếu đang quay -> Lưu file
-                if status.get('recording'):
-                    logger.info("Auto-saving WEBCAM before disconnect...")
-                    res = client.webcam_stop_recording()
-                    
-                    if res.get('success'):
-                        from .models import WebcamRecording
-                        from django.core.files.base import ContentFile
-                        
-                        # Lưu vào Model WebcamRecording
-                        fname = res.get('filename', 'webcam_autosave.avi')
-                        rec = WebcamRecording(
-                            server_ip=request.session.get('target_server_ip', 'unknown'),
-                            filename=fname,
-                            file_size=res.get('file_size'),
-                            duration=res.get('duration', 0)
-                        )
-                        rec.file_path.save(fname, ContentFile(res.get('video_data')), save=True)
-            except Exception as e:
-                logger.error(f"Error auto-saving webcam: {e}")
-
-            # 1.3 Luôn luôn tắt Webcam
-            try:
-                client.webcam_off()
-            except: pass
-
-
-            # ================= 2. XỬ LÝ SCREEN RECORDER (AUTO SAVE + OFF) =================
-            try:
-                # 2.1 Kiểm tra trạng thái
-                status = client.screen_status()
-                
-                # 2.2 Nếu đang quay -> Lưu file (QUAN TRỌNG: Dùng Model ScreenRecording)
-                if status.get('recording'):
-                    logger.info("Auto-saving SCREEN before disconnect...")
-                    res = client.screen_stop_recording()
-                    
-                    if res.get('success'):
-                        from .models import ScreenRecording  # <--- Import đúng Model mới
-                        from django.core.files.base import ContentFile
-                        
-                        # Lấy tên file gốc
-                        raw_name = res.get('filename', 'screen_autosave.avi')
-                        # Thêm prefix SCREEN_ (tùy chọn, để dễ nhìn)
-                        final_name = "SCREEN_" + raw_name
-                        
-                        rec = ScreenRecording(
-                            server_ip=request.session.get('target_server_ip', 'unknown'),
-                            filename=final_name,
-                            file_size=res.get('file_size'),
-                            duration=res.get('duration', 0)
-                        )
-                        # Lưu file (sẽ tự vào folder screen_recordings/ do Model quy định)
-                        rec.file_path.save(final_name, ContentFile(res.get('video_data')), save=True)
-                        logger.info(f"Screen recording saved: {final_name}")
-                        
-            except Exception as e:
-                logger.error(f"Error auto-saving screen: {e}")
-
-            # 2.3 Luôn luôn tắt Screen Stream
-            try:
-                client.screen_stop_stream()
-            except: pass
-
-
-            # ================= 3. DỌN DẸP KHÁC =================
+            # ================= DỌN DẸP CMD =================
             try:
                 client.shell_reset()
             except: pass
@@ -963,7 +892,7 @@ def screen_stop_rec(request):
         safe_host = "".join([c for c in host_name if c.isalnum() or c in '-_'])
         
         raw_filename = result.get('filename', 'screen.avi')
-        final_filename = f"{safe_host}_SCREEN_{raw_filename}"
+        final_filename = f"{safe_host}_{raw_filename}"
         
         rec = ScreenRecording(
             server_ip=request.session.get('target_server_ip', 'unknown'),

@@ -1,7 +1,7 @@
 <main data-page="home">
     <div class="px-4 pt-6">
         
-        <div id="dash-disconnected" class="hidden">
+        <div id="dash-disconnected"> 
             <div class="p-8 text-center bg-white border border-gray-200 rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700">
                 <div class="inline-flex items-center justify-center w-16 h-16 mb-4 bg-gray-100 rounded-full dark:bg-gray-700">
                     <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
@@ -12,7 +12,6 @@
         </div>
 
         <div id="dash-connected" class="hidden space-y-4">
-            
             <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm dark:border-gray-700 dark:bg-gray-800">
                 <div class="flex flex-wrap items-start justify-between gap-4">
                     <div class="min-w-0 flex-1">
@@ -53,7 +52,6 @@
             </div>
 
             <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-                
                 <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700">
                     <div class="flex justify-between mb-2"><span class="text-sm font-medium text-gray-500 dark:text-gray-400">CPU Load</span></div>
                     <div class="flex items-baseline gap-2">
@@ -92,8 +90,6 @@
                         <span id="dash-battery" class="text-2xl font-bold text-gray-900 dark:text-white">--</span>
                     </div>
                     <p class="mt-2 text-xs text-gray-400">Power Status</p>
-                    
-                    
                 </div>
             </div>
         </div>
@@ -101,93 +97,100 @@
 </main>
 
 <script>
+    // 1. CLEAR TIMER CŨ NGAY LẬP TỨC
+    if (window.homePollingTimer) {
+        clearTimeout(window.homePollingTimer);
+        window.homePollingTimer = null;
+    }
+
     function initHomePage() {
-        // 1. Kiểm tra xem có đang ở trang Home không
         if (!document.querySelector('[data-page="home"]')) return;
         
-        console.log("INIT HOME PAGE");
+        console.log("INIT HOME PAGE - Strict Sync Mode");
 
         const viewDisconnected = document.getElementById('dash-disconnected');
         const viewConnected = document.getElementById('dash-connected');
-        let pollingTimer = null;
 
-        // 2. Hàm set UI (Ẩn/Hiện Dashboard)
         function setUI(isConnected) {
             if (isConnected) {
                 viewDisconnected.classList.add('hidden');
                 viewConnected.classList.remove('hidden');
             } else {
-                viewConnected.classList.add('hidden');
+                // Đảm bảo ẩn Connected trước
+                viewConnected.classList.add('hidden'); 
                 viewDisconnected.classList.remove('hidden');
             }
         }
 
-        // 3. Hàm fetch dữ liệu
         async function fetchStats() {
             if (!document.querySelector('[data-page="home"]')) return;
 
             try {
+                // Check localStorage
                 if (!localStorage.getItem('connectedServer')) {
-                    setUI(false);
+                    setUI(false); 
                     return; 
                 }
 
                 const response = await fetch('/remote/api/stats/');
-                if (!response.ok) throw new Error("Busy");
+                
+                // Nếu server Python restart, session mất -> fetch trả về lỗi hoặc json báo disconnected
+                if (!response.ok) throw new Error("Server Error");
                 
                 const data = await response.json();
 
                 if (data.status === 'success') {
-                    setUI(true);
                     updateDashboardData(data.data);
-                } else if (data.status === 'disconnected') {
-                    setUI(false);
-                    // Nếu socket gãy -> gọi hàm global để reset nút trên thanh điều hướng
+                    setUI(true); // Chỉ hiện khi có dữ liệu thật
+                    
+                    // Thành công thì mới hẹn giờ tiếp
+                    window.homePollingTimer = setTimeout(fetchStats, 2000);
+
+                } else {
+                    // --- SỬA LỖI Ở ĐÂY: XỬ LÝ KHI SERVER BÁO LỖI/DISCONNECTED ---
+                    console.warn("Server reported disconnection/error. Resetting UI.");
+                    
+                    // 1. Ẩn Dashboard ngay lập tức
+                    setUI(false); 
+                    
+                    // 2. Xóa cờ trong localStorage để không bao giờ thử lại nữa
+                    localStorage.removeItem('connectedServer');
+                    localStorage.removeItem('connectionTime');
+                    
+                    // 3. Gọi hàm global để reset nút trên thanh điều hướng
                     if(window.handleClientDisconnect) window.handleClientDisconnect();
                 }
 
             } catch (error) {
-                console.log("Polling skipped:", error.message);
-            } finally {
-                if (document.querySelector('[data-page="home"]')) {
-                    pollingTimer = setTimeout(fetchStats, 2000); 
-                }
+                console.log("Polling fail (Server likely dead):", error.message);
+                
+                // Nếu lỗi mạng nghiêm trọng (Python server tắt), coi như disconnect luôn
+                setUI(false); 
+                // Không xóa localStorage ngay nếu chỉ là lag mạng, 
+                // nhưng nếu restart server thì fetch sẽ báo lỗi kết nối -> retry
+                window.homePollingTimer = setTimeout(fetchStats, 2000);
             }
         }
 
+        // Logic update dữ liệu (giữ nguyên)
         function updateDashboardData(data) {
-            const setText = (id, val) => { 
-                const el = document.getElementById(id); 
-                if(el) el.textContent = val; 
-            };
-
-            // Thông tin cơ bản
+            const setText = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
             setText('dash-hostname', data.hostname);
             setText('dash-os', data.os_info);
             setText('dash-ip', data.internal_ip);
             setText('dash-latency', data.latency);
             setText('dash-battery', data.battery);
-
-            // --- THÔNG TIN MỚI ---
             setText('dash-uptime', data.uptime);
             setText('dash-cpu-name', data.cpu_name);
-            
-            // GPU + Resolution (Ghép lại cho gọn)
             const gpuText = data.gpu_name + (data.screen_res ? ` (${data.screen_res})` : "");
             setText('dash-gpu-name', gpuText);
-            // Hint title khi hover
             const gpuEl = document.getElementById('dash-gpu-name');
             if(gpuEl) gpuEl.title = gpuText;
-
-            // RAM & Disk
             setText('dash-ram', data.ram_free);
             setText('dash-ram-total', data.ram_total);
             setText('dash-disk', data.disk_info);
-
-            // CPU Bar Animation
             const cpu = parseFloat(data.cpu_load);
             setText('dash-cpu', cpu);
-            
             const bar = document.getElementById('dash-cpu-bar');
             if(bar) {
                 bar.style.width = `${Math.min(cpu, 100)}%`;
@@ -199,12 +202,10 @@
         }
 
         // --- KHỞI CHẠY ---
-        const savedServer = localStorage.getItem('connectedServer');
-        if (savedServer) {
-            setUI(true); 
-            fetchStats(); 
-        } else {
-            setUI(false);
+        // Vẫn giữ UI Disconnected (mặc định trong HTML).
+        // Chỉ chạy fetch ngầm nếu có cờ.
+        if (localStorage.getItem('connectedServer')) {
+            fetchStats();
         }
     }
 
