@@ -246,6 +246,7 @@ namespace WebcamRecorder
         {
             try
             {
+                if (string.IsNullOrEmpty(filename)) return null;
                 string filePath = Path.Combine(outputFolder, filename);
                 if (File.Exists(filePath)) return File.ReadAllBytes(filePath);
                 return null;

@@ -22,7 +22,7 @@ class PersistentRemoteClient:
     # ==================== CLASS VARIABLES ====================
     
     _instances = {}
-    _lock = threading.Lock()  # Khóa lock để đồng bộ hóa luồng
+    _class_lock = threading.Lock()  # Class lock để đồng bộ _instances
 
     # ==================== CONSTRUCTOR ====================
 
@@ -33,6 +33,8 @@ class PersistentRemoteClient:
         self.timeout = timeout
         self.socket: socket.socket | None = None
         self.connected = False
+        self.hostname = "Unknown"  # Hostname của server
+        self._lock = threading.Lock()  # Instance lock cho thread-safety
 
     # ==================== CLASS METHODS ====================
 
@@ -40,31 +42,35 @@ class PersistentRemoteClient:
     def get_or_create(cls, session_id, host, port, timeout=5):
         """
         Factory method: Quản lý Singleton theo session_id
+        Thread-safe với class lock
         """
-        if session_id not in cls._instances:
-            instance = cls(host, port, timeout)
-            try:
-                instance.connect()
-                cls._instances[session_id] = instance
-            except Exception:
-                return None
-        else:
-            instance = cls._instances[session_id]
-            if not instance.connected:
+        with cls._class_lock:
+            if session_id not in cls._instances:
+                instance = cls(host, port, timeout)
                 try:
                     instance.connect()
+                    cls._instances[session_id] = instance
                 except Exception:
-                    del cls._instances[session_id]
                     return None
-                    
-        return cls._instances[session_id]
+            else:
+                instance = cls._instances[session_id]
+                if not instance.connected:
+                    try:
+                        instance.connect()
+                    except Exception:
+                        del cls._instances[session_id]
+                        return None
+                        
+            return cls._instances[session_id]
 
     @classmethod
     def disconnect_session(cls, session_id):
-        if session_id in cls._instances:
-            client = cls._instances[session_id]
-            client.disconnect()
-            del cls._instances[session_id]
+        """Ngắt kết nối và xóa session. Thread-safe."""
+        with cls._class_lock:
+            if session_id in cls._instances:
+                client = cls._instances[session_id]
+                client.disconnect()
+                del cls._instances[session_id]
 
     # ==================== CONNECTION METHODS ====================
 
@@ -75,6 +81,7 @@ class PersistentRemoteClient:
             self.socket.settimeout(self.timeout)
             self.socket.connect((self.host, self.port))
             self.connected = True
+            self.hostname = "Unknown"  # Reset hostname khi reconnect
         except (socket.timeout, ConnectionRefusedError):
             self.connected = False
             raise  # Ném lỗi ra để hàm gọi xử lý
@@ -314,18 +321,25 @@ class PersistentRemoteClient:
         """Lấy frame hiện tại từ module (WEBCAM hoặc SCREEN_REC)."""
         if not self.connected:
             return None
-        if not self._lock.acquire(timeout=0.5):
+        # Sử dụng non-blocking lock acquire để tránh deadlock khi streaming
+        if not self._lock.acquire(blocking=False):
             return None
         try:
-            self._send_str(module)
-            self._send_str("GET_FRAME")
-            size_str = self._recv_line()
-            if not size_str.isdigit() or int(size_str) == 0:
+            # Đặt timeout ngắn cho frame streaming
+            old_timeout = self.socket.gettimeout()
+            self.socket.settimeout(0.5)
+            try:
+                self._send_str(module)
+                self._send_str("GET_FRAME")
+                size_str = self._recv_line()
+                if not size_str.isdigit() or int(size_str) == 0:
+                    self._send_str("QUIT")
+                    return None
+                frame_data = self._recv_bytes(int(size_str))
                 self._send_str("QUIT")
-                return None
-            frame_data = self._recv_bytes(int(size_str))
-            self._send_str("QUIT")
-            return frame_data
+                return frame_data
+            finally:
+                self.socket.settimeout(old_timeout)
         except:
             return None
         finally:

