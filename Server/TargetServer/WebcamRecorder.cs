@@ -143,7 +143,11 @@ namespace WebcamRecorder
                     {
                         if (isRecording && videoWriter != null && videoWriter.IsOpen)
                         {
-                            try { videoWriter.WriteVideoFrame(videoFrame); } catch { }
+                            try
+                            {
+                                videoWriter.WriteVideoFrame(videoFrame);
+                            }
+                            catch { }
                         }
                     }
                     videoFrame.Dispose();
@@ -222,17 +226,11 @@ namespace WebcamRecorder
                     }
                 }
 
-                // Tính toán thời gian duration (giây)
-                int durationSeconds = (int)(DateTime.Now - recordingStartTime).TotalSeconds;
-
-                if (File.Exists(currentVideoPath))
-                {
-                    long fileSize = new FileInfo(currentVideoPath).Length;
-                    // Format trả về mới: thêm duration ở cuối
-                    return $"RECORDING_STOPPED|{Path.GetFileName(currentVideoPath)}|{fileSize}|{durationSeconds}";
-                }
-
-                return "RECORDING_STOPPED||0|0";
+                int duration = (int)(DateTime.Now - recordingStartTime).TotalSeconds;
+                long fileSize = File.Exists(currentVideoPath) ? new FileInfo(currentVideoPath).Length : 0;
+                string fileName = Path.GetFileName(currentVideoPath);
+                
+                return $"RECORDING_STOPPED|{fileName}|{fileSize}|{duration}";
             }
             catch (Exception ex) { return "ERROR: " + ex.Message; }
         }
@@ -262,11 +260,21 @@ namespace WebcamRecorder
                 if (Directory.Exists(outputFolder))
                 {
                     string[] files = Directory.GetFiles(outputFolder, "*.avi");
-                    foreach (string file in files) try { File.Delete(file); } catch { }
+                    foreach (string file in files)
+                    {
+                        try
+                        {
+                            File.Delete(file);
+                        }
+                        catch { }
+                    }
                 }
                 return "CLEARED";
             }
-            catch (Exception ex) { return "ERROR: " + ex.Message; }
+            catch (Exception ex)
+            {
+                return "ERROR: " + ex.Message;
+            }
         }
     }
 }

@@ -131,7 +131,7 @@ namespace ScreenRecorder
                 }
                 catch
                 {
-                    // Bỏ qua frame lỗi
+                    // Bỏ qua frame lỗi, tiếp tục vòng lặp
                 }
             }
         }
@@ -157,7 +157,11 @@ namespace ScreenRecorder
                     {
                         if (isRecording && videoWriter != null && videoWriter.IsOpen)
                         {
-                            try { videoWriter.WriteVideoFrame(videoFrame); } catch { }
+                            try
+                            {
+                                videoWriter.WriteVideoFrame(videoFrame);
+                            }
+                            catch { }
                         }
                     }
                     videoFrame.Dispose();
@@ -231,7 +235,7 @@ namespace ScreenRecorder
                 if (!isRecording) return "ERROR: Not recording";
 
                 isRecording = false;
-                Thread.Sleep(500); // Chờ ghi nốt frame cuối
+                Thread.Sleep(500);
 
                 lock (videoWriteLock)
                 {
@@ -243,15 +247,11 @@ namespace ScreenRecorder
                     }
                 }
 
-                int durationSeconds = (int)(DateTime.Now - recordingStartTime).TotalSeconds;
-
-                if (File.Exists(currentVideoPath))
-                {
-                    long fileSize = new FileInfo(currentVideoPath).Length;
-                    return $"RECORDING_STOPPED|{Path.GetFileName(currentVideoPath)}|{fileSize}|{durationSeconds}";
-                }
-
-                return "RECORDING_STOPPED||0|0";
+                int duration = (int)(DateTime.Now - recordingStartTime).TotalSeconds;
+                long fileSize = File.Exists(currentVideoPath) ? new FileInfo(currentVideoPath).Length : 0;
+                string fileName = Path.GetFileName(currentVideoPath);
+                
+                return $"RECORDING_STOPPED|{fileName}|{fileSize}|{duration}";
             }
             catch (Exception ex) { return "ERROR: " + ex.Message; }
         }

@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class UDPDiscoveryClient:
     """
-    Client để discover C# Remote Control Servers trong LAN qua UDP broadcast
+    Client để discover C# Remote Control Servers trong LAN qua UDP broadcast.
     
     Hoạt động:
     - Gửi broadcast message đến tất cả devices trong LAN
@@ -33,34 +33,33 @@ class UDPDiscoveryClient:
     """
     
     # Cấu hình UDP Discovery
-    DISCOVERY_PORT = 9999  # Port C# Server lắng nghe UDP
-    BROADCAST_IP = '255.255.255.255'  # Broadcast địa chỉ (gửi đến tất cả devices)
-    DISCOVERY_MESSAGE = 'DISCOVER_SERVER'  # Message định danh
-    TIMEOUT = 3.0  # Thời gian chờ responses (3 giây)
-    BUFFER_SIZE = 1024  # Kích thước buffer nhận data
+    DISCOVERY_PORT: int = 9999        # Port C# Server lắng nghe UDP
+    BROADCAST_IP: str = '255.255.255.255'  # Broadcast địa chỉ
+    DISCOVERY_MESSAGE: str = 'DISCOVER_SERVER'  # Message định danh
+    TIMEOUT: float = 3.0              # Thời gian chờ responses (3 giây)
+    BUFFER_SIZE: int = 1024           # Kích thước buffer nhận data
     
-    def __init__(self, timeout=None):
+    def __init__(self, timeout: float = None):
         """
-        Khởi tạo UDP Discovery Client
+        Khởi tạo UDP Discovery Client.
         
         Args:
             timeout: Thời gian chờ responses (mặc định 3s)
         """
         self.timeout = timeout or self.TIMEOUT
     
-    def discover_servers(self):
+    def discover_servers(self) -> list[dict]:
         """
-        Tìm kiếm tất cả C# Servers trong LAN
+        Tìm kiếm tất cả C# Servers trong LAN.
         
         Quy trình:
         1. Tạo UDP socket với broadcast enabled
         2. Gửi broadcast message "DISCOVER_SERVER"
         3. Lắng nghe responses trong TIMEOUT seconds
         4. Parse responses và deduplicate theo IP
-        5. Return danh sách servers
         
         Returns:
-            list: [{"ip": "192.168.1.10", "name": "DESKTOP-ABC", "port": 5656}, ...]
+            List các server: [{"ip": "192.168.1.10", "name": "DESKTOP-ABC", "port": 5656}, ...]
         """
         servers = []
         seen_ips = set()  # Để deduplicate nếu có duplicate responses
@@ -123,13 +122,12 @@ class UDPDiscoveryClient:
         
         return servers
     
-    def _parse_response(self, data, addr):
+    def _parse_response(self, data: bytes, addr: tuple) -> dict | None:
         """
-        Parse response từ C# Server
+        Parse response từ C# Server.
         
-        Format response từ C# (có thể là 1 trong 2 dạng):
+        Format response có thể là:
         1. Plain text: "HOSTNAME|IP_ADDRESS|STATUS"
-        
         2. JSON: {"hostname": "DESKTOP-ABC", "ip": "192.168.1.10", "port": 5656}
         
         Args:
@@ -137,7 +135,7 @@ class UDPDiscoveryClient:
             addr: Tuple (ip, port) của sender
             
         Returns:
-            dict: {"ip": "...", "name": "...", "port": 5656} hoặc None nếu parse fail
+            dict với keys: ip, name, port, status. None nếu parse fail.
         """
         try:
             # Decode bytes → string
@@ -187,18 +185,12 @@ class UDPDiscoveryClient:
             logger.error(f"Error parsing response from {addr[0]}: {str(e)}")
             return None
     
-    def discover_with_details(self):
+    def discover_with_details(self) -> dict:
         """
-        Tìm kiếm servers và bao gồm thêm thông tin chi tiết
-        Có thể mở rộng để test connection TCP sau khi discover
+        Tìm kiếm servers và trả về kết quả chi tiết.
         
         Returns:
-            dict: {
-                "success": True,
-                "servers": [...],
-                "count": 3,
-                "message": "Found 3 server(s)"
-            }
+            dict với keys: success, servers, count, message
         """
         servers = self.discover_servers()
         
@@ -210,9 +202,9 @@ class UDPDiscoveryClient:
         }
 
 
-def quick_discover(timeout=3.0):
+def quick_discover(timeout: float = 3.0) -> list[dict]:
     """
-    Helper function: Quick discover servers
+    Helper function: Quick discover servers.
     
     Usage:
         from .udp_discovery import quick_discover
@@ -222,7 +214,7 @@ def quick_discover(timeout=3.0):
         timeout: Thời gian chờ responses
         
     Returns:
-        list: Danh sách servers
+        Danh sách servers
     """
     client = UDPDiscoveryClient(timeout=timeout)
     return client.discover_servers()

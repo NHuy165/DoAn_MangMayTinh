@@ -1,8 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
 using System.Windows.Forms;
 
 namespace ServerApp
@@ -135,7 +132,11 @@ namespace ServerApp
                     Program.nw.Flush();
                 }
             }
-            catch { Program.nw.WriteLine("0"); Program.nw.Flush(); }
+            catch
+            {
+                Program.nw.WriteLine("0");
+                Program.nw.Flush();
+            }
         }
 
         // ==================== FILE OPERATIONS ====================
@@ -144,23 +145,15 @@ namespace ServerApp
         {
             try
             {
-                if (File.Exists(path))
-                {
-                    File.Delete(path);
-                    Program.nw.WriteLine("SUCCESS");
-                    Program.nw.WriteLine("Deleted File successfully");
-                }
-                else if (Directory.Exists(path))
-                {
-                    Directory.Delete(path, true); // True = xóa đệ quy
-                    Program.nw.WriteLine("SUCCESS");
-                    Program.nw.WriteLine("Deleted Folder successfully");
-                }
-                else
-                {
-                    Program.nw.WriteLine("ERROR");
-                    Program.nw.WriteLine("Path not found");
-                }
+                bool isFile = File.Exists(path);
+                bool isDir = Directory.Exists(path);
+                
+                if (isFile) File.Delete(path);
+                else if (isDir) Directory.Delete(path, true);
+                
+                Program.nw.WriteLine(isFile || isDir ? "SUCCESS" : "ERROR");
+                Program.nw.WriteLine(isFile ? "Deleted File successfully" : 
+                                     isDir ? "Deleted Folder successfully" : "Path not found");
             }
             catch (Exception ex)
             {

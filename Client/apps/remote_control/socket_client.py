@@ -32,15 +32,16 @@ class RemoteControlClient:
 
     # ==================== CONSTRUCTOR ====================
     
-    def __init__(self, host='127.0.0.1', port=5656, timeout=10):
+    def __init__(self, host: str = '127.0.0.1', port: int = 5656, timeout: int = 10):
+        """Khởi tạo client với host, port và timeout."""
         self.host = host
         self.port = port
         self.timeout = timeout
 
     # ==================== UTILITY METHODS ====================
     
-    def recvall(self, sock, n):
-        """Hàm tiện ích nhận đủ n bytes dữ liệu (dùng cho ảnh)"""
+    def recvall(self, sock: socket.socket, n: int) -> bytes | None:
+        """Nhận đủ n bytes dữ liệu từ socket (dùng cho ảnh)."""
         data = b''
         while len(data) < n:
             packet = sock.recv(n - len(data))
@@ -51,17 +52,17 @@ class RemoteControlClient:
 
     # ==================== CORE METHODS ====================
     
-    def send_command_to_server(self, command_type, sub_command=None, args=None):
+    def send_command_to_server(self, command_type: str, sub_command: str = None, args: str = None) -> dict:
         """
-        Hàm trung tâm: Gửi lệnh Socket sang C# Server và xử lý phản hồi
+        Gửi lệnh Socket sang C# Server và xử lý phản hồi.
         
         Args:
-            command_type: Loại lệnh chính (PROCESS, APPLICATION, KEYLOG, TAKEPIC, SHUTDOWN, RESTART)
+            command_type: Loại lệnh (PROCESS, APPLICATION, KEYLOG, TAKEPIC, SHUTDOWN, RESTART)
             sub_command: Lệnh phụ (XEM, KILL, START, HOOK, UNHOOK, etc.)
             args: Tham số bổ sung (PID, tên process, etc.)
         
         Returns:
-            dict: {"status": "success/error", "data": ..., "message": ...}
+            dict với keys: status (success/error), data, message
         """
         response_data = None
         status = "error"

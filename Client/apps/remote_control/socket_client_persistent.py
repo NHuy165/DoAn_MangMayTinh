@@ -26,11 +26,12 @@ class PersistentRemoteClient:
 
     # ==================== CONSTRUCTOR ====================
 
-    def __init__(self, host, port, timeout=5):
+    def __init__(self, host: str, port: int, timeout: int = 5):
+        """Khởi tạo client với host, port và timeout."""
         self.host = host
         self.port = port
         self.timeout = timeout
-        self.socket = None
+        self.socket: socket.socket | None = None
         self.connected = False
 
     # ==================== CLASS METHODS ====================
@@ -67,10 +68,8 @@ class PersistentRemoteClient:
 
     # ==================== CONNECTION METHODS ====================
 
-    def connect(self):
-        """
-        Thiết lập kết nối TCP
-        """
+    def connect(self) -> None:
+        """Thiết lập kết nối TCP đến server."""
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.settimeout(self.timeout)
@@ -78,9 +77,10 @@ class PersistentRemoteClient:
             self.connected = True
         except (socket.timeout, ConnectionRefusedError):
             self.connected = False
-            raise # Ném lỗi ra để hàm gọi xử lý
+            raise  # Ném lỗi ra để hàm gọi xử lý
 
-    def disconnect(self):
+    def disconnect(self) -> None:
+        """Ngắt kết nối và dọn dẹp tài nguyên."""
         if self.socket:
             try:
                 self.socket.sendall(b"QUIT\n")
@@ -92,11 +92,14 @@ class PersistentRemoteClient:
 
     # ==================== RAW SOCKET HELPERS ====================
     
-    def _send_str(self, text):
-        if not text.endswith('\n'): text += '\n'
+    def _send_str(self, text: str) -> None:
+        """Gửi chuỗi text qua socket, tự động thêm newline."""
+        if not text.endswith('\n'):
+            text += '\n'
         self.socket.sendall(text.encode('utf-8'))
 
-    def _recv_line(self):
+    def _recv_line(self) -> str:
+        """Nhận một dòng text từ socket."""
         line = b''
         while True:
             try:
@@ -108,12 +111,14 @@ class PersistentRemoteClient:
                 raise # Ném lỗi timeout lên trên
         return line.decode('utf-8', errors='ignore').strip()
 
-    def _recv_bytes(self, num_bytes):
+    def _recv_bytes(self, num_bytes: int) -> bytes:
+        """Nhận đúng num_bytes từ socket."""
         data = b''
         while len(data) < num_bytes:
             try:
                 chunk = self.socket.recv(min(4096, num_bytes - len(data)))
-                if not chunk: break
+                if not chunk:
+                    break
                 data += chunk
             except socket.timeout:
                 raise
@@ -121,7 +126,8 @@ class PersistentRemoteClient:
 
     # ==================== CORE COMMAND METHODS ====================
 
-    def send_command(self, command_type, sub_command=None, args=None):
+    def send_command(self, command_type: str, sub_command: str = None, args: str = None) -> dict:
+        """Gửi lệnh đến server và nhận phản hồi."""
         if not self.connected:
             return {"status": "error", "message": "Not connected"}
         
@@ -163,8 +169,14 @@ class PersistentRemoteClient:
                         self._send_str("STARTID")
                         app_name = str(args)
                         # Mapping tên tắt
-                        aliases = {"edge": "msedge", "chrome": "chrome", "notepad": "notepad", "calc": "calc"}
-                        if app_name.lower() in aliases: app_name = aliases[app_name.lower()]
+                        aliases = {
+                            "edge": "msedge",
+                            "chrome": "chrome",
+                            "notepad": "notepad",
+                            "calc": "calc"
+                        }
+                        if app_name.lower() in aliases:
+                            app_name = aliases[app_name.lower()]
                         self._send_str(app_name)
                         msg = self._recv_line()
                         status = "success"
@@ -178,7 +190,6 @@ class PersistentRemoteClient:
                         size = int(size_str)
                         if size > 0:
                             img_data = self._recv_bytes(size)
-                            import base64
                             response_data = base64.b64encode(img_data).decode('utf-8')
                             status = "success"
                     self._send_str("QUIT")
@@ -190,10 +201,12 @@ class PersistentRemoteClient:
                         status = "success"
                     elif sub_command == "HOOK":
                         self._send_str("HOOK")
-                        status = "success"; msg = "Keylogger started"
+                        status = "success"
+                        msg = "Keylogger started"
                     elif sub_command == "UNHOOK":
                         self._send_str("UNHOOK")
-                        status = "success"; msg = "Keylogger stopped"
+                        status = "success"
+                        msg = "Keylogger stopped"
                     elif sub_command == "CLEAR":
                         self._send_str("CLEAR")
                         msg = self._recv_line()
@@ -237,8 +250,11 @@ class PersistentRemoteClient:
                 return {"status": "error", "message": str(e)}
 
     # ==================== WEBCAM & SCREEN METHODS ====================
-    def _generic_recorder_action(self, module_name, action, is_stop=False):
-        if not self.connected: return {"success": False, "message": "Not connected"}
+    
+    def _generic_recorder_action(self, module_name: str, action: str, is_stop: bool = False) -> dict:
+        """Xử lý chung cho các thao tác webcam/screen recording."""
+        if not self.connected:
+            return {"success": False, "message": "Not connected"}
         
         with self._lock:
             try:
@@ -294,9 +310,12 @@ class PersistentRemoteClient:
     def screen_get_frame(self): return self._get_frame_generic("SCREEN_REC")
     def screen_status(self): return self._get_status_generic("SCREEN_REC")
 
-    def _get_frame_generic(self, module):
-        if not self.connected: return None
-        if not self._lock.acquire(timeout=0.5): return None
+    def _get_frame_generic(self, module: str) -> bytes | None:
+        """Lấy frame hiện tại từ module (WEBCAM hoặc SCREEN_REC)."""
+        if not self.connected:
+            return None
+        if not self._lock.acquire(timeout=0.5):
+            return None
         try:
             self._send_str(module)
             self._send_str("GET_FRAME")
@@ -307,11 +326,15 @@ class PersistentRemoteClient:
             frame_data = self._recv_bytes(int(size_str))
             self._send_str("QUIT")
             return frame_data
-        except: return None
-        finally: self._lock.release()
+        except:
+            return None
+        finally:
+            self._lock.release()
 
-    def _get_status_generic(self, module):
-        if not self.connected: return {"on": False, "rec": False}
+    def _get_status_generic(self, module: str) -> dict:
+        """Lấy trạng thái của module (on/rec)."""
+        if not self.connected:
+            return {"on": False, "rec": False}
         with self._lock:
             try:
                 self._send_str(module)
@@ -319,85 +342,135 @@ class PersistentRemoteClient:
                 resp = self._recv_line()
                 self._send_str("QUIT")
                 parts = resp.split('|')
-                return {"on": "true" in parts[0], "rec": "true" in parts[1] if len(parts) > 1 else False}
-            except: return {"on": False, "rec": False}
+                is_on = "true" in parts[0]
+                is_rec = "true" in parts[1] if len(parts) > 1 else False
+                return {"on": is_on, "rec": is_rec}
+            except:
+                return {"on": False, "rec": False}
 
     # ==================== SHELL METHODS ====================
 
-    def shell_reset(self):
-        if not self.connected: return
+    def shell_reset(self) -> None:
+        """Reset shell session trên server."""
+        if not self.connected:
+            return
         with self._lock:
             try:
                 self._send_str("CMD")
                 self._send_str("RESET")
-            except: pass
+            except:
+                pass
 
     # ==================== FILE MANAGER METHODS ====================
 
-    def file_get_drives(self):
-        if not self.connected: return {"success": False, "message": "Not connected"}
+    def _file_operation(self, *commands) -> tuple[bool, str]:
+        """Helper: Gửi các commands FILE và return (success, first_response)."""
+        try:
+            for cmd in commands:
+                self._send_str(cmd)
+            return True, self._recv_line()
+        except socket.timeout:
+            return False, "Timeout: Server likely BUSY"
+        except Exception as e:
+            return False, str(e)
+
+    def file_get_drives(self) -> dict:
+        """Lấy danh sách ổ đĩa từ server."""
+        if not self.connected:
+            return {"success": False, "message": "Not connected"}
         with self._lock:
             try:
-                self._send_str("FILE"); self._send_str("GET_DRIVES")
+                self._send_str("FILE")
+                self._send_str("GET_DRIVES")
                 count = int(self._recv_line())
-                drives = []
-                for _ in range(count):
-                    parts = self._recv_line().split('|')
-                    if len(parts) >= 3: drives.append({"path": parts[0], "type": parts[1], "info": parts[2]})
+                drives = [
+                    {"path": p[0], "type": p[1], "info": p[2]}
+                    for _ in range(count)
+                    for p in [self._recv_line().split('|')]
+                    if len(p) >= 3
+                ]
                 self._send_str("QUIT")
                 return {"success": True, "drives": drives}
-            except socket.timeout: return {"success": False, "message": "Timeout: Server likely BUSY"}
-            except Exception as e: return {"success": False, "message": str(e)}
+            except socket.timeout:
+                return {"success": False, "message": "Timeout: Server likely BUSY"}
+            except Exception as e:
+                return {"success": False, "message": str(e)}
 
-    def file_get_directory(self, path):
-        if not self.connected: return {"success": False, "message": "Not connected"}
+    def file_get_directory(self, path: str) -> dict:
+        """Lấy nội dung thư mục từ server."""
+        if not self.connected:
+            return {"success": False, "message": "Not connected"}
         with self._lock:
             try:
-                self._send_str("FILE"); self._send_str("GET_DIR"); self._send_str(path)
+                self._send_str("FILE")
+                self._send_str("GET_DIR")
+                self._send_str(path)
                 resp = self._recv_line()
                 if resp == "ERROR":
-                    msg = self._recv_line(); self._send_str("QUIT")
+                    msg = self._recv_line()
+                    self._send_str("QUIT")
                     return {"success": False, "message": msg}
-                items = []
-                if resp.isdigit():
-                    for _ in range(int(resp)):
-                        parts = self._recv_line().split('|')
-                        if len(parts) >= 3: items.append({"type": parts[0], "name": parts[1], "size": parts[2]})
+                
+                items = [
+                    {"type": p[0], "name": p[1], "size": p[2]}
+                    for _ in range(int(resp)) if resp.isdigit()
+                    for p in [self._recv_line().split('|')]
+                    if len(p) >= 3
+                ] if resp.isdigit() else []
+                
                 self._send_str("QUIT")
                 return {"success": True, "items": items, "current_path": path}
-            except socket.timeout: return {"success": False, "message": "Timeout: Server likely BUSY"}
-            except Exception as e: return {"success": False, "message": str(e)}
+            except socket.timeout:
+                return {"success": False, "message": "Timeout: Server likely BUSY"}
+            except Exception as e:
+                return {"success": False, "message": str(e)}
 
-    def file_delete_item(self, path):
-        if not self.connected: return {"success": False, "message": "Not connected"}
+    def file_delete_item(self, path: str) -> dict:
+        """Xóa file hoặc thư mục trên server."""
+        if not self.connected:
+            return {"success": False, "message": "Not connected"}
         with self._lock:
             try:
-                self._send_str("FILE"); self._send_str("DELETE"); self._send_str(path)
-                status = self._recv_line(); msg = self._recv_line()
+                self._send_str("FILE")
+                self._send_str("DELETE")
+                self._send_str(path)
+                status = self._recv_line()
+                msg = self._recv_line()
                 self._send_str("QUIT")
                 return {"success": (status == "SUCCESS"), "message": msg}
-            except socket.timeout: return {"success": False, "message": "Timeout: Server likely BUSY"}
-            except Exception as e: return {"success": False, "message": str(e)}
+            except socket.timeout:
+                return {"success": False, "message": "Timeout: Server likely BUSY"}
+            except Exception as e:
+                return {"success": False, "message": str(e)}
 
-    def file_download(self, path):
-        if not self.connected: return {"success": False, "message": "Not connected"}
+    def file_download(self, path: str) -> dict:
+        """Tải file từ server về client."""
+        if not self.connected:
+            return {"success": False, "message": "Not connected"}
         with self._lock:
             try:
-                self._send_str("FILE"); self._send_str("DOWNLOAD"); self._send_str(path)
+                self._send_str("FILE")
+                self._send_str("DOWNLOAD")
+                self._send_str(path)
                 size_str = self._recv_line()
                 if not size_str.isdigit() or int(size_str) == 0:
                     self._send_str("QUIT")
                     return {"success": False, "message": "File invalid"}
                 data = self._recv_bytes(int(size_str))
                 self._send_str("QUIT")
-                return {"success": True, "filename": path.split('\\')[-1], "data": data}
-            except socket.timeout: return {"success": False, "message": "Timeout: Server likely BUSY"}
-            except Exception as e: return {"success": False, "message": str(e)}
+                filename = path.split('\\')[-1]
+                return {"success": True, "filename": filename, "data": data}
+            except socket.timeout:
+                return {"success": False, "message": "Timeout: Server likely BUSY"}
+            except Exception as e:
+                return {"success": False, "message": str(e)}
 
     # ==================== SYSTEM INFO METHODS ====================
 
-    def get_system_stats(self):
-        if not self.connected: return {"status": "error", "message": "Not connected"}
+    def get_system_stats(self) -> dict:
+        """Lấy thông tin hệ thống từ server (CPU, RAM, Battery, etc.)."""
+        if not self.connected:
+            return {"status": "error", "message": "Not connected"}
         with self._lock:
             try:
                 self.socket.settimeout(2.0)
@@ -407,19 +480,19 @@ class PersistentRemoteClient:
                 latency = round((time.time() - start) * 1000, 0)
                 self.socket.settimeout(self.timeout)
 
-                if response.startswith("ERROR"): return {"status": "error", "message": response}
+                if response.startswith("ERROR"):
+                    return {"status": "error", "message": response}
                 
                 parts = response.split('|')
-                def get(i, d="?"): return parts[i] if len(parts) > i else d
-                self.hostname = get(4, "Unknown_Host")
-                data = {
-                    "cpu_load": get(0, "0"), "ram_free": get(1, "0"), "battery": get(2, "Unk"),
-                    "hostname": self.hostname,
-                    "uptime": get(3, "0d"), "hostname": get(4, "Unk"), "os_info": get(5, "Unk"),
-                    "internal_ip": get(6, "Unk"), "cpu_name": get(7, "CPU"), "gpu_name": get(8, "GPU"),
-                    "ram_total": get(9, "?"), "disk_info": get(10, "Drive"), "screen_res": get(11, "Res"),
-                    "latency": latency
-                }
+                keys = ["cpu_load", "ram_free", "battery", "uptime", "hostname", 
+                        "os_info", "internal_ip", "cpu_name", "gpu_name", "ram_total", 
+                        "disk_info", "screen_res"]
+                defaults = ["0", "0", "Unk", "0d", "Unk", "Unk", "Unk", "CPU", "GPU", "?", "Drive", "Res"]
+                
+                data = {k: (parts[i] if i < len(parts) else d) for i, (k, d) in enumerate(zip(keys, defaults))}
+                data["latency"] = latency
+                self.hostname = data["hostname"]
+                
                 return {"status": "success", "data": data}
 
             except socket.timeout:

