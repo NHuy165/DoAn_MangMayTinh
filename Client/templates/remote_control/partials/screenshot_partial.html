@@ -9,7 +9,7 @@
                 </div>
                 <div class="flex items-center">
                     <button onclick="takeScreenshot()" 
-                        class="inline-flex items-center px-3 py-2 text-sm font-medium text-center text-gray-800 dark:text-white rounded-lg bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 dark:focus:ring-blue-800 transition-colors">
+                        class="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-primary-700 hover:bg-primary-800 rounded-lg focus:ring-4 focus:ring-primary-300 dark:bg-primary-600 dark:hover:bg-primary-700 dark:focus:ring-primary-800 transition-colors">
                         <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
                             <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"></path>
                         </svg>
@@ -46,11 +46,18 @@
                     <img id="screenshotImage" src="" alt="Screenshot" class="hidden w-auto h-auto max-w-screen max-h-screen object-contain border border-gray-300 rounded">
                 </div>
                 
-                <!-- Tip Message -->
-                <div id="tipMessage" class="hidden mt-4 p-3 bg-blue-50 dark:bg-blue-900 rounded-lg">
-                    <p class="text-sm text-blue-800 dark:text-blue-200">
-                        <strong>Tip:</strong> Right-click on the image → "Save image as..." to download
+                <!-- Download Button -->
+                <div id="downloadArea" class="hidden mt-4 flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+                    <p class="text-sm text-gray-700 dark:text-gray-200">
+                        <strong>✓ Screenshot captured!</strong> Click the button to save.
                     </p>
+                    <button onclick="downloadScreenshot()" 
+                        class="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-primary-700 hover:bg-primary-800 rounded-lg focus:ring-4 focus:ring-primary-300 dark:bg-primary-600 dark:hover:bg-primary-700 dark:focus:ring-primary-800 transition-colors">
+                        <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                            <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                        </svg>
+                        Download Image
+                    </button>
                 </div>
             </div>
         </div>
@@ -69,13 +76,13 @@
         const emptyState = document.getElementById('emptyState');
         const loadingState = document.getElementById('loadingState');
         const img = document.getElementById('screenshotImage');
-        const tipMessage = document.getElementById('tipMessage');
+        const downloadArea = document.getElementById('downloadArea');
 
         // Show loading, hide empty state and image
         emptyState.classList.add('hidden');
         loadingState.classList.remove('hidden');
         img.classList.add('hidden');
-        tipMessage.classList.add('hidden');
+        downloadArea.classList.add('hidden');
 
         const res = await apiCall('/remote/api/screenshot/');
         
@@ -86,12 +93,41 @@
             // Show screenshot - PNG format từ C# server
             img.src = "data:image/png;base64," + res.data;
             img.classList.remove('hidden');
-            tipMessage.classList.remove('hidden');
+            downloadArea.classList.remove('hidden');
         } else {
             // Show error and empty state again
             showNotification("error", 'Lỗi chụp màn hình: ' + (res.message || 'Unknown error'));
             emptyState.classList.remove('hidden');
         }
+    }
+    
+    function downloadScreenshot() {
+        const img = document.getElementById('screenshotImage');
+        if (!img.src || img.src === '') {
+            showNotification("error", "No screenshot to download");
+            return;
+        }
+        
+        // Create download link
+        const link = document.createElement('a');
+        link.href = img.src;
+        
+        // Generate filename with timestamp
+        const now = new Date();
+        const timestamp = now.getFullYear() + 
+            String(now.getMonth() + 1).padStart(2, '0') + 
+            String(now.getDate()).padStart(2, '0') + '_' +
+            String(now.getHours()).padStart(2, '0') + 
+            String(now.getMinutes()).padStart(2, '0') + 
+            String(now.getSeconds()).padStart(2, '0');
+        link.download = `screenshot_${timestamp}.png`;
+        
+        // Trigger download
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        showNotification("success", "Screenshot downloaded!");
     }
 </script>
 
