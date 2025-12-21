@@ -8,12 +8,19 @@ Giao thức:
 3. Python collect tất cả responses trong timeout period (3 giây)
 4. Return danh sách servers tìm được
 """
-import socket
+
+# ==================== IMPORTS ====================
+
 import json
 import logging
+import socket
+
+# ==================== LOGGER ====================
 
 logger = logging.getLogger(__name__)
 
+
+# ==================== MAIN CLASS ====================
 
 class UDPDiscoveryClient:
     """

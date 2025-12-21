@@ -4,18 +4,26 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Threading;
 using System.Windows.Forms;
-using Accord.Video.FFMPEG; // Thư viện này bạn đã có sẵn
+
+using Accord.Video.FFMPEG;
 
 namespace ScreenRecorder
 {
+    /// <summary>
+    /// ScreenCapture - Chụp và ghi video màn hình
+    /// Hỗ trợ: Live Streaming và Recording
+    /// </summary>
     public class ScreenCapture
     {
+        // ==================== STATIC FIELDS ====================
+
         // Thư mục lưu video tạm
         public static string outputFolder = Path.Combine(Path.GetTempPath(), "screen_recordings");
         public static string currentVideoPath = "";
 
-        // --- CẤU HÌNH ---
-        // Sử dụng Thread để tự chụp màn hình thay vì dùng thư viện ngoài
+        // ==================== PRIVATE FIELDS ====================
+
+        // Thread và Writer
         private Thread captureThread;
         private VideoFileWriter videoWriter;
         private Bitmap currentFrame;
@@ -31,10 +39,16 @@ namespace ScreenRecorder
         // Thông số màn hình
         private int screenWidth;
         private int screenHeight;
-        private const int INTERVAL = 100; // 100ms = 10 FPS (Đủ mượt cho Remote, nhẹ máy)
-        private const int VIDEO_BITRATE = 1000000; // 1 Mbps
 
+        // Recording metadata
         private DateTime recordingStartTime;
+
+        // ==================== CONSTANTS ====================
+
+        private const int INTERVAL = 100;           // 100ms = 10 FPS (Đủ mượt cho Remote, nhẹ máy)
+        private const int VIDEO_BITRATE = 1000000;  // 1 Mbps
+
+        // ==================== CONSTRUCTOR ====================
 
         public ScreenCapture()
         {
@@ -47,7 +61,8 @@ namespace ScreenRecorder
             screenHeight = bounds.Height;
         }
 
-        // --- PHẦN 1: STREAMING (LIVE VIEW) ---
+        // ==================== STREAMING METHODS ====================
+
         public string StartStream()
         {
             try
@@ -168,7 +183,8 @@ namespace ScreenRecorder
             catch { return null; }
         }
 
-        // --- PHẦN 2: RECORDING (GHI FILE) ---
+        // ==================== RECORDING METHODS ====================
+
         public string StartRecording()
         {
             try
@@ -239,6 +255,8 @@ namespace ScreenRecorder
             }
             catch (Exception ex) { return "ERROR: " + ex.Message; }
         }
+
+        // ==================== STATUS & UTILITY METHODS ====================
 
         public string GetStatus()
         {

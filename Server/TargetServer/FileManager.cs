@@ -1,16 +1,20 @@
 ﻿using System;
-using System.IO;
-using System.Text;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using System.Windows.Forms; // Thêm cái này để dùng Application.StartupPath nếu cần
+using System.Text;
+using System.Windows.Forms;
 
 namespace ServerApp
 {
+    /// <summary>
+    /// FileManager - Xử lý các lệnh quản lý file từ Client
+    /// Giao thức trả về: "TYPE|NAME|SIZE_OR_INFO"
+    /// TYPE: "DRIVE", "DIR", "FILE", "ERROR", "OK"
+    /// </summary>
     public class FileManager
     {
-        // Giao thức trả về: "TYPE|NAME|SIZE_OR_INFO"
-        // TYPE: "DRIVE", "DIR", "FILE", "ERROR", "OK"
+        // ==================== MAIN HANDLER ====================
 
         public void HandleFileCommand()
         {
@@ -66,6 +70,8 @@ namespace ServerApp
             }
         }
 
+        // ==================== DRIVE OPERATIONS ====================
+
         private void SendDrives()
         {
             try
@@ -91,6 +97,8 @@ namespace ServerApp
             }
             catch (Exception ex) { Error(ex.Message); }
         }
+
+        // ==================== DIRECTORY OPERATIONS ====================
 
         private void SendDirectory(string path)
         {
@@ -129,6 +137,8 @@ namespace ServerApp
             }
             catch { Program.nw.WriteLine("0"); Program.nw.Flush(); }
         }
+
+        // ==================== FILE OPERATIONS ====================
 
         private void DeleteFileOrFolder(string path)
         {
@@ -195,6 +205,8 @@ namespace ServerApp
             }
             catch { }
         }
+
+        // ==================== HELPER FUNCTIONS ====================
 
         // Helper format dung lượng (Bytes -> KB, MB)
         private string FormatSize(long bytes)

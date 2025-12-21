@@ -1,20 +1,39 @@
-import socket
+"""
+Persistent Socket Client - Quản lý kết nối TCP đến C# Server
+Sử dụng Singleton pattern theo session_id
+"""
+
+# ==================== IMPORTS ====================
+
+import base64
 import json
-import time
+import socket
 import threading
+import time
+
+
+# ==================== MAIN CLASS ====================
 
 class PersistentRemoteClient:
-    _instances = {}
+    """
+    PersistentRemoteClient - Quản lý kết nối TCP persistent theo session
+    """
     
-    # Khóa lock để đồng bộ hóa luồng (tránh xung đột khi đang Stream video mà gửi lệnh khác)
-    _lock = threading.Lock()
+    # ==================== CLASS VARIABLES ====================
+    
+    _instances = {}
+    _lock = threading.Lock()  # Khóa lock để đồng bộ hóa luồng
 
-    def __init__(self, host, port, timeout=5): # Giảm timeout mặc định xuống 5s cho phản hồi nhanh hơn
+    # ==================== CONSTRUCTOR ====================
+
+    def __init__(self, host, port, timeout=5):
         self.host = host
         self.port = port
         self.timeout = timeout
         self.socket = None
         self.connected = False
+
+    # ==================== CLASS METHODS ====================
 
     @classmethod
     def get_or_create(cls, session_id, host, port, timeout=5):
@@ -46,6 +65,8 @@ class PersistentRemoteClient:
             client.disconnect()
             del cls._instances[session_id]
 
+    # ==================== CONNECTION METHODS ====================
+
     def connect(self):
         """
         Thiết lập kết nối TCP
@@ -69,7 +90,7 @@ class PersistentRemoteClient:
         self.socket = None
         self.connected = False
 
-    # ==================== CÁC HÀM HỖ TRỢ RAW SOCKET ====================
+    # ==================== RAW SOCKET HELPERS ====================
     
     def _send_str(self, text):
         if not text.endswith('\n'): text += '\n'
@@ -98,7 +119,7 @@ class PersistentRemoteClient:
                 raise
         return data
 
-    # ==================== GỬI LỆNH (CORE) ====================
+    # ==================== CORE COMMAND METHODS ====================
 
     def send_command(self, command_type, sub_command=None, args=None):
         if not self.connected:
@@ -207,17 +228,15 @@ class PersistentRemoteClient:
 
                 return {"status": status, "data": response_data, "message": msg}
             
-            # --- XỬ LÝ LỖI TIMEOUT (BUSY) ---
             except socket.timeout:
                 self.connected = False
-                # Đây là thông báo lỗi quan trọng để UI hiển thị
                 return {"status": "error", "message": "Request Timed Out (Server likely BUSY or Blocked)"}
                 
             except Exception as e:
                 self.connected = False
                 return {"status": "error", "message": str(e)}
 
-    # ==================== WEBCAM & SCREEN ====================
+    # ==================== WEBCAM & SCREEN METHODS ====================
     def _generic_recorder_action(self, module_name, action, is_stop=False):
         if not self.connected: return {"success": False, "message": "Not connected"}
         
@@ -259,18 +278,21 @@ class PersistentRemoteClient:
             except Exception as e:
                 return {"success": False, "message": str(e)}
 
-    # Wrapper methods
+    # Webcam wrapper methods
     def webcam_on(self): return self._generic_recorder_action("WEBCAM", "ON")
     def webcam_off(self): return self._generic_recorder_action("WEBCAM", "OFF")
     def webcam_start_recording(self): return self._generic_recorder_action("WEBCAM", "START_REC")
     def webcam_stop_recording(self): return self._generic_recorder_action("WEBCAM", "STOP_REC", is_stop=True)
+    def webcam_get_frame(self): return self._get_frame_generic("WEBCAM")
+    def webcam_status(self): return self._get_status_generic("WEBCAM")
+    
+    # Screen wrapper methods
     def screen_start_stream(self): return self._generic_recorder_action("SCREEN_REC", "START")
     def screen_stop_stream(self): return self._generic_recorder_action("SCREEN_REC", "STOP")
     def screen_start_recording(self): return self._generic_recorder_action("SCREEN_REC", "START_REC")
     def screen_stop_recording(self): return self._generic_recorder_action("SCREEN_REC", "STOP_REC", is_stop=True)
-
-    def webcam_get_frame(self): return self._get_frame_generic("WEBCAM")
     def screen_get_frame(self): return self._get_frame_generic("SCREEN_REC")
+    def screen_status(self): return self._get_status_generic("SCREEN_REC")
 
     def _get_frame_generic(self, module):
         if not self.connected: return None
@@ -288,9 +310,6 @@ class PersistentRemoteClient:
         except: return None
         finally: self._lock.release()
 
-    def webcam_status(self): return self._get_status_generic("WEBCAM")
-    def screen_status(self): return self._get_status_generic("SCREEN_REC")
-
     def _get_status_generic(self, module):
         if not self.connected: return {"on": False, "rec": False}
         with self._lock:
@@ -303,6 +322,8 @@ class PersistentRemoteClient:
                 return {"on": "true" in parts[0], "rec": "true" in parts[1] if len(parts) > 1 else False}
             except: return {"on": False, "rec": False}
 
+    # ==================== SHELL METHODS ====================
+
     def shell_reset(self):
         if not self.connected: return
         with self._lock:
@@ -311,7 +332,8 @@ class PersistentRemoteClient:
                 self._send_str("RESET")
             except: pass
 
-    # ==================== FILE HANDLING ====================
+    # ==================== FILE MANAGER METHODS ====================
+
     def file_get_drives(self):
         if not self.connected: return {"success": False, "message": "Not connected"}
         with self._lock:
@@ -372,18 +394,18 @@ class PersistentRemoteClient:
             except socket.timeout: return {"success": False, "message": "Timeout: Server likely BUSY"}
             except Exception as e: return {"success": False, "message": str(e)}
 
-    # ==================== SYSTEM INFO ====================
+    # ==================== SYSTEM INFO METHODS ====================
+
     def get_system_stats(self):
         if not self.connected: return {"status": "error", "message": "Not connected"}
         with self._lock:
             try:
-                # Timeout ngắn hơn cho System Info (2s) để UI không bị đơ
                 self.socket.settimeout(2.0)
                 start = time.time()
                 self._send_str("SYSTEM_INFO")
                 response = self._recv_line()
                 latency = round((time.time() - start) * 1000, 0)
-                self.socket.settimeout(self.timeout) # Reset timeout
+                self.socket.settimeout(self.timeout)
 
                 if response.startswith("ERROR"): return {"status": "error", "message": response}
                 
@@ -401,7 +423,6 @@ class PersistentRemoteClient:
                 return {"status": "success", "data": data}
 
             except socket.timeout:
-                # Riêng System Info, timeout có thể do lag mạng hoặc Server Busy
                 return {"status": "error", "message": "Timeout (Server Busy/Lag)"}
             except Exception as e:
                 self.connected = False

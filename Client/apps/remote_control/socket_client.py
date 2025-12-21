@@ -2,31 +2,42 @@
 Socket Client Helper - Giao tiếp với C# Server
 Chuyển đổi từ Flask app.py sang Django
 """
-import socket
-import base64
 
+# ==================== IMPORTS ====================
+
+import base64
+import socket
+
+
+# ==================== MAIN CLASS ====================
 
 class RemoteControlClient:
     """Client để giao tiếp với C# Remote Control Server"""
+
+    # ==================== CLASS CONSTANTS ====================
+    
+    # Danh sách ánh xạ tên thông dụng sang tên tiến trình thực tế
+    APP_ALIASES = {
+        "edge": "msedge",
+        "chrome": "chrome",
+        "coc coc": "browser",
+        "word": "winword",
+        "excel": "excel",
+        "powerpoint": "powerpnt",
+        "notepad": "notepad",
+        "calc": "calc",
+        "paint": "mspaint",
+        "cmd": "cmd"
+    }
+
+    # ==================== CONSTRUCTOR ====================
     
     def __init__(self, host='127.0.0.1', port=5656, timeout=10):
         self.host = host
         self.port = port
         self.timeout = timeout
-        
-        # Danh sách ánh xạ tên thông dụng sang tên tiến trình thực tế
-        self.APP_ALIASES = {
-            "edge": "msedge",
-            "chrome": "chrome",
-            "coc coc": "browser",
-            "word": "winword",
-            "excel": "excel",
-            "powerpoint": "powerpnt",
-            "notepad": "notepad",
-            "calc": "calc",
-            "paint": "mspaint",
-            "cmd": "cmd"
-        }
+
+    # ==================== UTILITY METHODS ====================
     
     def recvall(self, sock, n):
         """Hàm tiện ích nhận đủ n bytes dữ liệu (dùng cho ảnh)"""
@@ -37,6 +48,8 @@ class RemoteControlClient:
                 return None
             data += packet
         return data
+
+    # ==================== CORE METHODS ====================
     
     def send_command_to_server(self, command_type, sub_command=None, args=None):
         """

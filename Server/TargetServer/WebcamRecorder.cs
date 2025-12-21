@@ -4,17 +4,27 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Threading;
+
+using Accord.Video.FFMPEG;
 using AForge.Video;
 using AForge.Video.DirectShow;
-using Accord.Video.FFMPEG;
 
 namespace WebcamRecorder
 {
+    /// <summary>
+    /// WebcamCapture - Chụp và ghi video từ webcam
+    /// Hỗ trợ: Camera Preview, Live Streaming và Recording
+    /// </summary>
     public class WebcamCapture
     {
+        // ==================== STATIC FIELDS ====================
+
         public static string outputFolder = Path.Combine(Path.GetTempPath(), "webcam_recordings");
         public static string currentVideoPath = "";
 
+        // ==================== PRIVATE FIELDS ====================
+
+        // Camera và Video Writer
         private VideoCaptureDevice videoSource;
         private VideoFileWriter videoWriter;
         private Bitmap currentFrame;
@@ -23,22 +33,30 @@ namespace WebcamRecorder
         private object frameLock = new object();
         private object videoWriteLock = new object();
 
+        // State flags
         private volatile bool isRecording = false;
         private bool isCameraOn = false;
 
         // Video Specs
         private int actualWidth = 640;
         private int actualHeight = 480;
+
+        // Recording metadata
+        private DateTime recordingStartTime;
+
+        // ==================== CONSTANTS ====================
+
         private const int TARGET_FPS = 25;
         private const int VIDEO_BITRATE = 1000000;
 
-        // --- MỚI: Biến lưu thời gian bắt đầu ---
-        private DateTime recordingStartTime;
+        // ==================== CONSTRUCTOR ====================
 
         public WebcamCapture()
         {
             if (!Directory.Exists(outputFolder)) Directory.CreateDirectory(outputFolder);
         }
+
+        // ==================== CAMERA CONTROL ====================
 
         public string TurnOn()
         {
@@ -99,6 +117,8 @@ namespace WebcamRecorder
             catch (Exception ex) { return "ERROR: " + ex.Message; }
         }
 
+        // ==================== FRAME CAPTURE ====================
+
         private void OnNewFrame(object sender, NewFrameEventArgs eventArgs)
         {
             try
@@ -149,6 +169,8 @@ namespace WebcamRecorder
             catch { return null; }
         }
 
+        // ==================== RECORDING ====================
+
         public string StartRecording()
         {
             try
@@ -166,7 +188,6 @@ namespace WebcamRecorder
                 }
 
                 isRecording = true;
-                // --- MỚI: Ghi nhận thời gian bắt đầu ---
                 recordingStartTime = DateTime.Now;
 
                 return "RECORDING_STARTED";
@@ -201,9 +222,8 @@ namespace WebcamRecorder
                     }
                 }
 
-                // --- MỚI: Tính toán thời gian duration (giây) ---
+                // Tính toán thời gian duration (giây)
                 int durationSeconds = (int)(DateTime.Now - recordingStartTime).TotalSeconds;
-                // ------------------------------------------------
 
                 if (File.Exists(currentVideoPath))
                 {
@@ -217,7 +237,8 @@ namespace WebcamRecorder
             catch (Exception ex) { return "ERROR: " + ex.Message; }
         }
 
-        // ... Các hàm GetStatus, GetVideoBytes, ClearAllRecordings giữ nguyên ...
+        // ==================== STATUS & UTILITY METHODS ====================
+
         public string GetStatus()
         {
             return $"camera_on:{isCameraOn.ToString().ToLower()}|recording:{isRecording.ToString().ToLower()}";
