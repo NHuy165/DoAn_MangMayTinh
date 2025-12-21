@@ -188,6 +188,23 @@ class PersistentRemoteClient:
                         msg = self._recv_line()
                         status = "success"
                     
+                    elif sub_command == "GET_START_APPS":
+                        self._send_str("GET_START_APPS")
+                        count_str = self._recv_line()
+                        if count_str.isdigit():
+                            count = int(count_str)
+                            data_list = []
+                            for _ in range(count):
+                                line = self._recv_line()
+                                parts = line.split('|')
+                                if len(parts) >= 2:
+                                    data_list.append({
+                                        "name": parts[0],
+                                        "path": parts[1]
+                                    })
+                            response_data = data_list
+                            status = "success"
+                    
                     self._send_str("QUIT")
 
                 elif command_type == "TAKEPIC":

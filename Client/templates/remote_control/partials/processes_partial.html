@@ -25,7 +25,7 @@
                                             Process Name
                                         </th>
                                         <th scope="col" class="p-4 text-xs font-medium tracking-wider text-left text-gray-500 uppercase dark:text-white">
-                                            PID
+                                            Process ID
                                         </th>
                                         <th scope="col" class="p-4 text-xs font-medium tracking-wider text-left text-gray-500 uppercase dark:text-white">
                                             Threads
@@ -49,19 +49,23 @@
             </div>
         </div>
 
-        <!-- Available Processes -->
+        <!-- Available Processes (Start Menu) -->
         <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm dark:border-gray-700 sm:p-6 dark:bg-gray-800">
             <div class="items-center justify-between mb-4 lg:flex">
                 <div class="mb-4 lg:mb-0">
-                    <h3 class="mb-2 text-xl font-bold text-gray-900 dark:text-white">Available Processes</h3>
+                    <h3 class="mb-2 text-xl font-bold text-gray-900 dark:text-white">Available Processes (Start Menu)</h3>
                 </div>
                 <div class="flex items-center space-x-2">
                     <input type="text" id="searchProcess" 
                         class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary-500 focus:border-primary-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-primary-500 dark:focus:border-primary-500"
-                        placeholder="Search or enter process name...">
+                        placeholder="Search or enter app path...">
                     <button onclick="startNewProcess()"
                         class="inline-flex items-center px-3 py-2 text-sm font-medium text-center text-white rounded-lg bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 dark:bg-green-500 dark:hover:bg-green-600 dark:focus:ring-green-800">
                         Start
+                    </button>
+                    <button onclick="rescanStartMenu()"
+                        class="inline-flex items-center px-3 py-2 text-sm font-medium text-center text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 focus:ring-4 focus:ring-gray-100 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500 dark:focus:ring-gray-700">
+                        Rescan
                     </button>
                 </div>
             </div>
@@ -74,10 +78,10 @@
                                 <thead class="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10">
                                     <tr>
                                         <th scope="col" class="p-4 text-xs font-medium tracking-wider text-left text-gray-500 uppercase dark:text-white">
-                                            Process Name
+                                            Application Name
                                         </th>
                                         <th scope="col" class="p-4 text-xs font-medium tracking-wider text-left text-gray-500 uppercase dark:text-white">
-                                            Description
+                                            Path
                                         </th>
                                         <th scope="col" class="p-4 text-xs font-medium tracking-wider text-left text-gray-500 uppercase dark:text-white">
                                             Action
@@ -102,19 +106,8 @@
 
 
 <script>
-    // Common system processes
-    const commonProcesses = [
-        {name: 'calc.exe', description: 'Calculator'},
-        {name: 'notepad.exe', description: 'Notepad'},
-        {name: 'mspaint.exe', description: 'Paint'},
-        {name: 'cmd.exe', description: 'Command Prompt'},
-        {name: 'powershell.exe', description: 'PowerShell'},
-        {name: 'taskmgr.exe', description: 'Task Manager'},
-        {name: 'explorer.exe', description: 'Windows Explorer'},
-        {name: 'chrome.exe', description: 'Google Chrome'},
-        {name: 'msedge.exe', description: 'Microsoft Edge'},
-        {name: 'firefox.exe', description: 'Mozilla Firefox'}
-    ];
+    // Cache danh sách Start Menu apps (để tránh load lại mỗi lần)
+    let cachedStartMenuApps = null;
 
     // Load running processes
     async function loadProcesses() {
@@ -127,6 +120,7 @@
         const runningTbody = document.getElementById('runningProcessesBody');
         const availableTbody = document.getElementById('availableProcessesBody');
         runningTbody.innerHTML = '<tr><td colspan="4" class="p-4 text-sm text-center text-gray-500 dark:text-gray-400">Loading...</td></tr>';
+        availableTbody.innerHTML = '<tr><td colspan="3" class="p-4 text-sm text-center text-gray-500 dark:text-gray-400">Loading Start Menu apps...</td></tr>';
         
         const data = await apiCall('/remote/api/process/list/');
         runningTbody.innerHTML = '';
@@ -159,8 +153,8 @@
                 runningProcessNames.push(proc.name.toLowerCase());
             });
             
-            // Chỉ load available processes khi API thành công
-            loadAvailableProcesses(runningProcessNames);
+            // Load available apps từ Start Menu
+            await loadAvailableProcesses(runningProcessNames);
         } else {
             runningTbody.innerHTML = '<tr><td colspan="4" class="p-4 text-sm text-center text-gray-500 dark:text-gray-400">No running processes or connection error</td></tr>';
             // QUAN TRỌNG: Không hiện available processes khi lỗi kết nối
@@ -168,32 +162,51 @@
         }
     }
 
-    // Load available processes (not running)
-    function loadAvailableProcesses(runningProcessNames = []) {
+    // Load available processes từ Start Menu của server
+    async function loadAvailableProcesses(runningProcessNames = []) {
         const tbody = document.getElementById('availableProcessesBody');
+        
+        // Lấy danh sách từ Start Menu (cache nếu đã có)
+        if (!cachedStartMenuApps) {
+            const startMenuData = await apiCall('/remote/api/app/start-menu/');
+            if (startMenuData.status === 'success' && startMenuData.data) {
+                cachedStartMenuApps = startMenuData.data;
+            } else {
+                tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-sm text-center text-gray-500 dark:text-gray-400">Failed to load Start Menu apps</td></tr>';
+                return;
+            }
+        }
+        
         tbody.innerHTML = '';
         
-        // Lọc các process chưa chạy
-        const availableProcesses = commonProcesses.filter(proc => {
-            const procNameLower = proc.name.toLowerCase();
+        // Lọc các app chưa chạy
+        const availableApps = cachedStartMenuApps.filter(app => {
+            const appNameLower = app.name.toLowerCase();
+            // Lấy tên file exe từ path
+            const exeName = app.path.split('\\').pop().toLowerCase().replace('.exe', '');
+            
             return !runningProcessNames.some(running => 
-                running.includes(procNameLower) || procNameLower.includes(running)
+                running.includes(appNameLower) || 
+                running.includes(exeName) ||
+                appNameLower.includes(running)
             );
         });
         
-        if (availableProcesses.length > 0) {
-            availableProcesses.forEach((proc, index) => {
+        if (availableApps.length > 0) {
+            availableApps.forEach((app, index) => {
                 const rowClass = index % 2 === 0 ? '' : 'bg-gray-50 dark:bg-gray-700';
+                // Escape backslash và quotes trong path cho onclick
+                const safePath = app.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 tbody.innerHTML += `
                     <tr class="${rowClass}">
                         <td class="p-4 text-sm font-normal text-gray-900 whitespace-nowrap dark:text-white">
-                            ${proc.name}
+                            ${app.name}
                         </td>
-                        <td class="p-4 text-sm font-normal text-gray-500 whitespace-nowrap dark:text-gray-400">
-                            ${proc.description}
+                        <td class="p-4 text-sm font-normal text-gray-500 whitespace-nowrap dark:text-gray-400 truncate" style="max-width: 300px;" title="${app.path}">
+                            ${app.path}
                         </td>
                         <td class="p-4 whitespace-nowrap">
-                            <button onclick="startProcess('${proc.name}')" 
+                            <button onclick="startProcess('${safePath}')" 
                                 class="inline-flex items-center px-3 py-2 text-sm font-medium text-center text-white bg-red-600 rounded-lg hover:bg-red-700 focus:ring-4 focus:ring-red-300 dark:bg-red-500 dark:hover:bg-red-600 dark:focus:ring-red-800">
                                 Start
                             </button>
@@ -201,13 +214,13 @@
                     </tr>`;
             });
         } else {
-            tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-sm text-center text-gray-500 dark:text-gray-400">All common processes are already running</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-sm text-center text-gray-500 dark:text-gray-400">All applications are already running</td></tr>';
         }
     }
 
     // Start process
-    async function startProcess(processName) {
-        const res = await apiCall('/remote/api/process/start/', 'POST', {name: processName});
+    async function startProcess(appPath) {
+        const res = await apiCall('/remote/api/process/start/', 'POST', {name: appPath});
         
         if (res.status === 'success') {
             showNotification("success", res.message || 'Process started successfully');
@@ -219,19 +232,26 @@
 
     // Start new custom process
     async function startNewProcess() {
-        const name = document.getElementById('searchProcess').value.trim();
-        if (!name) {
-            showNotification("error", 'Please enter process name');
+        const path = document.getElementById('searchProcess').value.trim();
+        if (!path) {
+            showNotification("error", 'Please enter application path');
             return;
         }
         
-        await startProcess(name);
+        await startProcess(path);
         document.getElementById('searchProcess').value = '';
+    }
+
+    // Rescan Start Menu - clear cache and reload
+    async function rescanStartMenu() {
+        cachedStartMenuApps = null; // Clear cache
+        showNotification("info", "Rescanning Start Menu...");
+        await loadProcesses();
     }
 
     // Kill process
     async function killProcess(pid, name) {
-        if (!confirm(`End task "${name}" (PID: ${pid})?`)) {
+        if (!confirm(`End task "${name}" (Process ID: ${pid})?`)) {
             return;
         }
         

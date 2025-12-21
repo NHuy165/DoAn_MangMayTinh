@@ -571,16 +571,133 @@ namespace ServerApp
                         string name = Program.nr.ReadLine();
                         try
                         {
-                            Process.Start(name);
-                            Program.nw.WriteLine("Successfully started: " + name);
+                            // Sử dụng explorer.exe để mở shortcut
+                            // Cách này xử lý được cả "advertised shortcuts" của Microsoft Office
+                            // và các loại shortcut thông thường
+                            ProcessStartInfo psi = new ProcessStartInfo();
+                            psi.FileName = "explorer.exe";
+                            psi.Arguments = "\"" + name + "\"";
+                            psi.UseShellExecute = false;
+                            
+                            Process.Start(psi);
+                            Program.nw.WriteLine("Successfully started: " + Path.GetFileName(name));
                         }
                         catch (Exception ex) { Program.nw.WriteLine("Failed: " + ex.Message.Replace("\n", " ")); }
                         Program.nw.Flush();
                     }
                 }
+                else if (ss == "GET_START_APPS") // Lấy danh sách ứng dụng từ Start Menu
+                {
+                    SendStartMenuApps();
+                }
             }
         }
 
+        // ==================== HELPER: GET START MENU APPS ====================
+        
+        /// <summary>
+        /// Quét thư mục Start Menu và trả về danh sách shortcuts (.lnk) trỏ đến file .exe
+        /// Format: COUNT rồi mỗi dòng là "AppName|ShortcutPath"
+        /// </summary>
+        private void SendStartMenuApps()
+        {
+            List<string> apps = new List<string>();
+            HashSet<string> addedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            
+            // Các thư mục Start Menu cần quét
+            string[] startMenuPaths = new string[]
+            {
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu) + @"\Programs",
+                Environment.GetFolderPath(Environment.SpecialFolder.StartMenu) + @"\Programs"
+            };
+            
+            // Tạo WScript.Shell một lần để dùng cho tất cả shortcuts
+            Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+            dynamic shell = null;
+            try { shell = Activator.CreateInstance(shellType); } catch { }
+            
+            foreach (string basePath in startMenuPaths)
+            {
+                if (Directory.Exists(basePath))
+                {
+                    try
+                    {
+                        // Quét tất cả file .lnk (shortcuts) trong thư mục và subfolders
+                        string[] shortcuts = Directory.GetFiles(basePath, "*.lnk", SearchOption.AllDirectories);
+                        
+                        foreach (string shortcut in shortcuts)
+                        {
+                            try
+                            {
+                                // Lấy tên file (bỏ extension .lnk)
+                                string appName = Path.GetFileNameWithoutExtension(shortcut);
+                                
+                                // Bỏ qua các shortcut uninstall, readme, help...
+                                string appNameLower = appName.ToLower();
+                                if (appNameLower.Contains("uninstall") || 
+                                    appNameLower.Contains("readme") ||
+                                    appNameLower.Contains("help") ||
+                                    appNameLower.Contains("documentation") ||
+                                    appNameLower.Contains("license") ||
+                                    appNameLower.Contains("manual"))
+                                {
+                                    continue;
+                                }
+                                
+                                // Kiểm tra target có phải là .exe không
+                                if (shell != null)
+                                {
+                                    try
+                                    {
+                                        dynamic lnk = shell.CreateShortcut(shortcut);
+                                        string target = lnk.TargetPath ?? "";
+                                        System.Runtime.InteropServices.Marshal.ReleaseComObject(lnk);
+                                        
+                                        // Chỉ lấy shortcuts trỏ đến file .exe
+                                        if (string.IsNullOrEmpty(target) || !target.ToLower().EndsWith(".exe"))
+                                        {
+                                            continue;
+                                        }
+                                    }
+                                    catch { continue; }
+                                }
+                                
+                                // Tránh trùng lặp tên
+                                if (addedNames.Contains(appName))
+                                {
+                                    continue;
+                                }
+                                addedNames.Add(appName);
+                                
+                                // Format: "AppName|ShortcutPath" - gửi đường dẫn shortcut
+                                apps.Add($"{appName}|{shortcut}");
+                            }
+                            catch { } // Bỏ qua lỗi từng shortcut
+                        }
+                    }
+                    catch { } // Bỏ qua lỗi truy cập thư mục
+                }
+            }
+            
+            // Cleanup COM object
+            if (shell != null)
+            {
+                try { System.Runtime.InteropServices.Marshal.ReleaseComObject(shell); } catch { }
+            }
+            
+            // Sắp xếp theo tên
+            apps = apps.OrderBy(a => a.Split('|')[0]).ToList();
+            
+            // Gửi số lượng
+            SendResponse(apps.Count.ToString());
+            
+            // Gửi từng app
+            foreach (string app in apps)
+            {
+                SendResponse(app);
+            }
+        }
+        
         // ==================== MODULE: UDP DISCOVERY ====================
 
         // Lắng nghe UDP broadcasts từ Python Web Server để tự động discover

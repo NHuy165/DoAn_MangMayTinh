@@ -372,12 +372,23 @@ def start_process(request):
 
 @require_http_methods(["GET"])
 def get_apps(request):
-    """API: Lấy danh sách applications"""
+    """API: Lấy danh sách applications đang chạy"""
     client = _get_client(request)
     if not client:
         return JsonResponse({"status": "error", "message": "Not connected to server"}, status=400)
     
     result = client.send_command("APPLICATION", "XEM")
+    return JsonResponse(result)
+
+
+@require_http_methods(["GET"])
+def get_start_apps(request):
+    """API: Lấy danh sách ứng dụng từ Start Menu của server"""
+    client = _get_client(request)
+    if not client:
+        return JsonResponse({"status": "error", "message": "Not connected to server"}, status=400)
+    
+    result = client.send_command("APPLICATION", "GET_START_APPS")
     return JsonResponse(result)
 
 

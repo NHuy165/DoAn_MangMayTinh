@@ -121,12 +121,42 @@
                 viewDisconnected.classList.remove('hidden');
             }
         }
+        
+        // Reset tất cả text về mặc định
+        function resetDashboardUI() {
+            const setText = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+            setText('dash-hostname', 'Loading...');
+            setText('dash-os', 'Checking OS...');
+            setText('dash-ip', 'IP: ...');
+            setText('dash-latency', '--');
+            setText('dash-battery', '--');
+            setText('dash-uptime', '--');
+            setText('dash-cpu-name', 'Checking CPU...');
+            setText('dash-gpu-name', 'Checking GPU...');
+            setText('dash-ram', '0');
+            setText('dash-ram-total', '?');
+            setText('dash-disk', '--');
+            setText('dash-cpu', '0');
+            const bar = document.getElementById('dash-cpu-bar');
+            if(bar) bar.style.width = '0%';
+        }
+        
+        // QUAN TRỌNG: Kiểm tra localStorage NGAY LẬP TỨC khi init
+        // Nếu không có connectedServer -> hiện Disconnected ngay, không cần fetch
+        if (!localStorage.getItem('connectedServer')) {
+            setUI(false);
+            return; // Không cần làm gì thêm
+        }
+        
+        // Có localStorage -> reset UI trước, rồi mới fetch validate
+        // Điều này đảm bảo không hiện data cũ
+        resetDashboardUI();
 
         async function fetchStats() {
             if (!document.querySelector('[data-page="home"]')) return;
 
             try {
-                // Check localStorage
+                // Check localStorage mỗi lần fetch
                 if (!localStorage.getItem('connectedServer')) {
                     setUI(false); 
                     return; 
@@ -202,11 +232,9 @@
         }
 
         // --- KHỞI CHẠY ---
-        // Vẫn giữ UI Disconnected (mặc định trong HTML).
-        // Chỉ chạy fetch ngầm nếu có cờ.
-        if (localStorage.getItem('connectedServer')) {
-            fetchStats();
-        }
+        // Nếu có cờ connectedServer, thử fetch để validate connection thật sự
+        // fetch sẽ xác nhận connection có thật hay không
+        fetchStats();
     }
 
     document.addEventListener('htmx:afterSwap', initHomePage);

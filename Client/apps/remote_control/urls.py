@@ -43,6 +43,7 @@ urlpatterns = [
     
     # Application Management
     path('api/app/list/', views.get_apps, name='api_app_list'),
+    path('api/app/start-menu/', views.get_start_apps, name='api_app_start_menu'),
     path('api/app/kill/', views.kill_app, name='api_app_kill'),
     
     # Screenshot
