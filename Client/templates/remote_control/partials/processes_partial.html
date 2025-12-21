@@ -107,7 +107,10 @@
 
 <script>
     // Cache danh sách Start Menu apps (để tránh load lại mỗi lần)
-    let cachedStartMenuApps = null;
+    // Dùng window scope để tránh lỗi "already declared" khi HTMX swap
+    if (typeof window.cachedStartMenuApps_proc === 'undefined') {
+        window.cachedStartMenuApps_proc = null;
+    }
 
     // Load running processes
     async function loadProcesses() {
@@ -167,10 +170,10 @@
         const tbody = document.getElementById('availableProcessesBody');
         
         // Lấy danh sách từ Start Menu (cache nếu đã có)
-        if (!cachedStartMenuApps) {
+        if (!window.cachedStartMenuApps_proc) {
             const startMenuData = await apiCall('/remote/api/app/start-menu/');
             if (startMenuData.status === 'success' && startMenuData.data) {
-                cachedStartMenuApps = startMenuData.data;
+                window.cachedStartMenuApps_proc = startMenuData.data;
             } else {
                 tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-sm text-center text-gray-500 dark:text-gray-400">Failed to load Start Menu apps</td></tr>';
                 return;
@@ -180,7 +183,7 @@
         tbody.innerHTML = '';
         
         // Lọc các app chưa chạy
-        const availableApps = cachedStartMenuApps.filter(app => {
+        const availableApps = window.cachedStartMenuApps_proc.filter(app => {
             const appNameLower = app.name.toLowerCase();
             // Lấy tên file exe từ path
             const exeName = app.path.split('\\').pop().toLowerCase().replace('.exe', '');
@@ -207,7 +210,7 @@
                         </td>
                         <td class="p-4 whitespace-nowrap">
                             <button onclick="startProcess('${safePath}')" 
-                                class="inline-flex items-center px-3 py-2 text-sm font-medium text-center text-white bg-green-600 rounded-lg hover:bg-green-700 focus:ring-4 focus:ring-green-300 dark:bg-green-500 dark:hover:bg-green-600 dark:focus:ring-green-800">
+                                class="inline-flex items-center px-3 py-2 text-sm font-medium text-center text-white bg-red-600 rounded-lg hover:bg-red-700 focus:ring-4 focus:ring-red-300 dark:bg-red-500 dark:hover:bg-red-600 dark:focus:ring-red-800">
                                 Start
                             </button>
                         </td>
@@ -244,7 +247,7 @@
 
     // Rescan Start Menu - clear cache and reload
     async function rescanStartMenu() {
-        cachedStartMenuApps = null; // Clear cache
+        window.cachedStartMenuApps_proc = null; // Clear cache
         showNotification("info", "Rescanning Start Menu...");
         await loadProcesses();
     }
