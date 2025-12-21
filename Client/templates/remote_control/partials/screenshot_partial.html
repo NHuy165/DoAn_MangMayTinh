@@ -60,6 +60,12 @@
 
 <script>
     async function takeScreenshot() {
+        // Kiểm tra đã connect server chưa
+        if (!localStorage.getItem('connectedServer')) {
+            showNotification("error", "Please connect to a server first");
+            return;
+        }
+        
         const emptyState = document.getElementById('emptyState');
         const loadingState = document.getElementById('loadingState');
         const img = document.getElementById('screenshotImage');

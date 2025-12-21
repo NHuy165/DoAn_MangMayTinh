@@ -119,7 +119,14 @@
 
     // Load running applications
     async function loadApplications() {
+        // Kiểm tra đã connect chưa
+        if (!localStorage.getItem('connectedServer')) {
+            showNotification("error", "Please connect to a server first");
+            return;
+        }
+        
         const runningTbody = document.getElementById('runningAppsBody');
+        const availableTbody = document.getElementById('availableAppsBody');
         runningTbody.innerHTML = '<tr><td colspan="4" class="p-4 text-sm text-center text-gray-500 dark:text-gray-400">Loading...</td></tr>';
         
         const data = await apiCall('/remote/api/app/list/');
@@ -152,12 +159,14 @@
                 // Lưu tên app đang chạy (lowercase để so sánh)
                 runningAppNames.push(app.name.toLowerCase());
             });
+            
+            // Chỉ load available apps khi API thành công
+            loadAvailableApps(runningAppNames);
         } else {
             runningTbody.innerHTML = '<tr><td colspan="4" class="p-4 text-sm text-center text-gray-500 dark:text-gray-400">No running applications or connection error</td></tr>';
+            // QUAN TRỌNG: Không hiện available apps khi lỗi kết nối
+            availableTbody.innerHTML = '<tr><td colspan="3" class="p-4 text-sm text-center text-gray-500 dark:text-gray-400">Connect to server and click Refresh to see available applications</td></tr>';
         }
-        
-        // Update available apps list (lọc các app chưa chạy)
-        loadAvailableApps(runningAppNames);
     }
 
     // Load available applications (not running)

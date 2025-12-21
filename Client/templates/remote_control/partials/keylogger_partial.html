@@ -148,6 +148,12 @@
     }
 
     async function toggleHook() {
+        // Kiểm tra đã connect server chưa
+        if (!localStorage.getItem('connectedServer')) {
+            showNotification("error", "Please connect to a server first");
+            return;
+        }
+        
         const hookBtn = document.getElementById('hookBtn');
         if(hookBtn) {
             hookBtn.innerHTML = `Wait...`; 

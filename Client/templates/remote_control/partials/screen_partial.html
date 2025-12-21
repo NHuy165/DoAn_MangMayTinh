@@ -225,6 +225,11 @@
         }
 
         async function turnOnScreen() {
+            // Kiểm tra đã connect server chưa
+            if (!localStorage.getItem('connectedServer')) {
+                showNotification("error", "Please connect to a server first");
+                return;
+            }
             if (localStorage.getItem('ACTIVE_STREAM_MODE') === 'WEBCAM') {
                 showNotification("info", "Cannot start Screen Stream because Webcam is active!");
                 return;

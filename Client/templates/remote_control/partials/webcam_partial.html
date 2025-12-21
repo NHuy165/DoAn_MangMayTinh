@@ -238,6 +238,11 @@
 
         // --- API ACTIONS ---
         async function turnOnCamera() {
+            // Kiểm tra đã connect server chưa
+            if (!localStorage.getItem('connectedServer')) {
+                showNotification("error", "Please connect to a server first");
+                return;
+            }
             const activeStream = localStorage.getItem('ACTIVE_STREAM_MODE');
             if (activeStream === 'SCREEN') {
                 showNotification("error", "Cannot start Webcam: Screen Recorder is active!");

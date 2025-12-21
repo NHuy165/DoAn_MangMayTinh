@@ -49,6 +49,12 @@
 <script>
     // Shutdown
     async function performShutdown() {
+        // Kiểm tra đã connect server chưa
+        if (!localStorage.getItem('connectedServer')) {
+            showNotification("error", "Please connect to a server first");
+            return;
+        }
+        
         if (!confirm('⚠️ Bạn có chắc muốn SHUTDOWN máy server không?\n\nMáy sẽ tắt ngay lập tức!')) {
             return;
         }
@@ -86,6 +92,12 @@
 
     // Restart
     async function performRestart() {
+        // Kiểm tra đã connect server chưa
+        if (!localStorage.getItem('connectedServer')) {
+            showNotification("error", "Please connect to a server first");
+            return;
+        }
+        
         if (!confirm('⚠️ Bạn có chắc muốn RESTART máy server không?\n\nMáy sẽ khởi động lại ngay lập tức!')) {
             return;
         }

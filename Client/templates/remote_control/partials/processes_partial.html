@@ -118,7 +118,14 @@
 
     // Load running processes
     async function loadProcesses() {
+        // Kiểm tra đã connect chưa
+        if (!localStorage.getItem('connectedServer')) {
+            showNotification("error", "Please connect to a server first");
+            return;
+        }
+        
         const runningTbody = document.getElementById('runningProcessesBody');
+        const availableTbody = document.getElementById('availableProcessesBody');
         runningTbody.innerHTML = '<tr><td colspan="4" class="p-4 text-sm text-center text-gray-500 dark:text-gray-400">Loading...</td></tr>';
         
         const data = await apiCall('/remote/api/process/list/');
@@ -151,12 +158,14 @@
                 // Lưu tên process đang chạy (lowercase để so sánh)
                 runningProcessNames.push(proc.name.toLowerCase());
             });
+            
+            // Chỉ load available processes khi API thành công
+            loadAvailableProcesses(runningProcessNames);
         } else {
             runningTbody.innerHTML = '<tr><td colspan="4" class="p-4 text-sm text-center text-gray-500 dark:text-gray-400">No running processes or connection error</td></tr>';
+            // QUAN TRỌNG: Không hiện available processes khi lỗi kết nối
+            availableTbody.innerHTML = '<tr><td colspan="3" class="p-4 text-sm text-center text-gray-500 dark:text-gray-400">Connect to server and click Refresh to see available processes</td></tr>';
         }
-        
-        // Update available processes list (lọc các process chưa chạy)
-        loadAvailableProcesses(runningProcessNames);
     }
 
     // Load available processes (not running)
