@@ -63,10 +63,6 @@
                         class="inline-flex items-center px-3 py-2 text-sm font-medium text-center text-white rounded-lg bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 dark:bg-green-500 dark:hover:bg-green-600 dark:focus:ring-green-800">
                         Start
                     </button>
-                    <button onclick="rescanStartMenu()"
-                        class="inline-flex items-center px-3 py-2 text-sm font-medium text-center text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 focus:ring-4 focus:ring-gray-100 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500 dark:focus:ring-gray-700">
-                        Rescan
-                    </button>
                 </div>
             </div>
             
@@ -243,13 +239,6 @@
         
         await startProcess(path);
         document.getElementById('searchProcess').value = '';
-    }
-
-    // Rescan Start Menu - clear cache and reload
-    async function rescanStartMenu() {
-        window.cachedStartMenuApps_proc = null; // Clear cache
-        showNotification("info", "Rescanning Start Menu...");
-        await loadProcesses();
     }
 
     // Kill process
