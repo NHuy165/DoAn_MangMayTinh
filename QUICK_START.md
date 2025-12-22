@@ -56,30 +56,18 @@ python manage.py runserver 0.0.0.0:8000
 
 ### Bước 3️⃣: Kết nối và Điều khiển
 
-1. **Mở trình duyệt** trên cùng máy đang chạy Django và truy cập: `http://127.0.0.1:8000`
+1. **Mở trình duyệt**:  
+Khi khởi động Django server, địa chỉ IP LAN sẽ được hiển thị trong terminal: `Django server LAN address: http://x.x.x.x:8000/`  
+Mở trình duyệt trên thiết bị và truy cập vào địa chỉ IP hiển thị ở dòng `Django server LAN address`.
+
 2. **Tìm Server**: Bấm nút **"Discover"** để quét các server trong LAN
 3. **Kết nối**: Chọn server từ danh sách và bấm **"Connect"**
 4. **Điều khiển**: Sử dụng các tính năng từ menu bên trái
 
----
-
-## 🌐 Truy Cập Từ Thiết Bị Khác Trong LAN
-
-Khi khởi động Django server, địa chỉ IP LAN sẽ được hiển thị trong terminal:
-
-```
-Django server LAN address: http://192.168.x.x:8000/
-
-Starting development server at http://0.0.0.0:8000/
-```
-
-**Cách truy cập:**
-- Sử dụng địa chỉ IP hiển thị ở dòng `Django server LAN address`
-- Ví dụ: `http://192.168.1.100:8000`
-
 > 💡 **Lưu ý**: Các thiết bị phải cùng mạng WiFi/Ethernet với máy chạy Django
 
 ---
+
 
 ## 🛠️ Xử Lý Sự Cố Thường Gặp
 

@@ -58,6 +58,8 @@ python manage.py runserver 0.0.0.0:8000
 
 ## 📁 Cấu Trúc Thư Mục
 
+> 📚 Xem chi tiết tại [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)
+
 ```
 DoAn_MangMayTinh/
 │
@@ -71,15 +73,18 @@ DoAn_MangMayTinh/
 │   │   ├── *.html                      # Wrapper templates
 │   │   └── partials/*_partial.html     # Code JS/HTML cho từng tính năng
 │   ├── media/                          # 📂 Lưu recordings từ Target
-│   ├── requirements.txt
 │   │
 │   └── ...
 │
 ├── Server/TargetServer/                # 🖥️ Target Server (C#)
 │   ├── server.cs                       # Logic server chính
-│   ├── Keylog.cs, WebcamRecorder.cs    # Các module chức năng
-│   ├── ScreenRecorder.cs, FileManager.cs
-│   └── TargetServer.slnx               # Solution file
+│   ├── Keylog.cs                       # 🔑 Module ghi phím
+│   ├── WebcamRecorder.cs               # 📷 Module quay webcam
+│   ├── ScreenRecorder.cs               # 🖼️ Module quay màn hình
+│   ├── FileManager.cs                  # 📁 Module quản lý file
+│   ├── TargetServer.slnx               # Solution file
+│   │
+│   └── ...
 │
 ├── AI_Chatlog/                         # 📝 Nhật ký phát triển
 └── *.md                                # 📚 Tài liệu

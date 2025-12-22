@@ -49,7 +49,6 @@ D:\Applications\Sources\Code\Python\DoAn_MangMayTinh\Server\TargetServer\bin\Deb
 D:\Applications\Sources\Code\Python\DoAn_MangMayTinh\Server\TargetServer\bin\Debug\Accord.xml
 D:\Applications\Sources\Code\Python\DoAn_MangMayTinh\Server\TargetServer\bin\Debug\Accord.Video.FFMPEG.xml
 D:\Applications\Sources\Code\Python\DoAn_MangMayTinh\Server\TargetServer\obj\Debug\TargetServer.csproj.AssemblyReference.cache
-D:\Applications\Sources\Code\Python\DoAn_MangMayTinh\Server\TargetServer\obj\Debug\TargetServer.exe.config
 D:\Applications\Sources\Code\Python\DoAn_MangMayTinh\Server\TargetServer\obj\Debug\TargetServer.Properties.Resources.resources
 D:\Applications\Sources\Code\Python\DoAn_MangMayTinh\Server\TargetServer\obj\Debug\ServerApp.server.resources
 D:\Applications\Sources\Code\Python\DoAn_MangMayTinh\Server\TargetServer\obj\Debug\TargetServer.csproj.GenerateResource.cache
