@@ -51,7 +51,7 @@ python manage.py runserver 0.0.0.0:8000
 # 2️⃣ Khởi động Server (Visual Studio)
 #    Mở Server/TargetServer/TargetServer.slnx → F5 → Bấm "Open Server"
 
-# 3️⃣ Mở trình duyệt → http://localhost:8000 → Discover → Connect
+# 3️⃣ Mở trình duyệt → http://x.x.x.x:8000 → Discover → Connect
 ```
 
 ---
