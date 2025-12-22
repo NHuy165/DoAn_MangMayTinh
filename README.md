@@ -14,7 +14,7 @@ Dự án xây dựng một hệ thống **Client-Server** cho phép điều khi�
 ┌─────────────────┐         TCP:5656          ┌──────────────────┐
 │   WEB BROWSER   │◄─────────────────────────►│  TARGET SERVER   │
 │  (Controller)   │                           │   (Windows PC)   │
-│                 │         UDP:5657          │                  │
+│                 │         UDP:9999          │                  │
 │  Django + HTML  │◄ ─ ─ ─ (Discovery) ─ ─ ─ ►│   C# WinForms    │
 └─────────────────┘                           └──────────────────┘
 ```
