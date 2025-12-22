@@ -25,7 +25,21 @@ Dự án xây dựng một hệ thống **Client-Server** cho phép điều khi�
 | **Web Controller** | Python (Django 4.2) | Giao diện điều khiển |
 
 ---
+### 📡 Giao thức Giao tiếp (Communication Protocol)
 
+Hệ thống sử dụng giao thức dựa trên văn bản (Text-based) qua TCP Socket để gửi lệnh điều khiển.
+
+**Định dạng lệnh (Request):**
+`COMMAND_TYPE` | `SUB_COMMAND` | `DATA (Optional)`
+
+**Ví dụ:**
+- **Lấy thông tin hệ thống:** `SYSTEM_INFO`
+- **Mở Notepad:** `PROCESS | START | notepad`
+- **Tắt Process:** `PROCESS | KILL | 1234`
+- **Keylogger:** `KEYLOG | HOOK`
+
+**Dữ liệu nhị phân (Binary Data):**
+Riêng với hình ảnh (Screen/Webcam) và File, dữ liệu được gửi dưới dạng byte array kèm header độ dài để đảm bảo toàn vẹn dữ liệu.
 ## ✨ Tính Năng
 
 | Nhóm | Tính năng |
@@ -53,9 +67,44 @@ python manage.py runserver 0.0.0.0:8000
 
 # 3️⃣ Mở trình duyệt → http://x.x.x.x:8000 → Discover → Connect
 ```
+# ⚠️ LƯU Ý QUAN TRỌNG (TROUBLESHOOTING)
 
+### 🛡️ 1. Chạy dưới quyền ADMIN (Bắt buộc)
+* **Yêu cầu:** Server C# phải được chạy bằng quyền **"Run as Administrator"**.
+* **Lý do:** Nếu không, tính năng **Keylogger** và **Kill Process** sẽ bị hệ thống chặn và không hoạt động.
+
+### 🔥 2. Tường lửa (Firewall)
+* **Cấu hình:** Cần cho phép (**Allow**) hoặc mở các cổng sau:
+    * **TCP Port:** `5656`
+    * **UDP Port:** `9999`
+* **Mẹo nhanh:** Để demo không bị gián đoạn, bạn có thể **tắt tạm thời Windows Firewall**.
+
+### 🌐 3. Mạng LAN
+* **Kết nối:** Máy Client và Server phải kết nối chung một mạng Wifi hoặc Router.
+* **Kiểm tra:** Sử dụng lệnh sau trong Terminal/CMD để kiểm tra thông mạng:
+    ```bash
+    ping <IP_SERVER>
+    ```
+### 📦 4. Lỗi thiếu thư viện (Dependencies)
+* **Vấn đề:** Visual Studio báo lỗi thiếu các thư viện như `AForge` hoặc `Accord`.
+* **Cách xử lý:** 1. Chuột phải vào **Solution** trong Solution Explorer.
+    2. Chọn **Restore NuGet Packages**.
 ---
+## 🛠️ Công nghệ & Thư viện
 
+### Backend (C# Server)
+- **Networking:** `System.Net.Sockets` (TCP/UDP Async)
+- **Video Processing:** `AForge.NET`, `Accord.Video.FFMPEG` (Xử lý Stream & Recording)
+- **System Internals:**
+  - `User32.dll` (Windows API Hooking cho Keylogger)
+  - `GDI+` (Chụp màn hình hiệu năng cao)
+  - `WMI` (Lấy thông tin phần cứng chi tiết)
+
+### Frontend (Python Client)
+- **Framework:** Django 4.2 (MVT Pattern)
+- **UI Library:** TailwindCSS (Responsive Design)
+- **Communication:** Python `socket` & `threading` (Quản lý kết nối song song)
+---
 ## 📁 Cấu Trúc Thư Mục
 
 > 📚 Xem chi tiết tại [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)
@@ -117,5 +166,4 @@ Dự án được phát triển với sự hỗ trợ của các công cụ AI. 
 - [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) - Tổng quan kiến trúc
 
 ---
-
 **🎓 Đồ án Môn Mạng Máy Tính - 2025**
