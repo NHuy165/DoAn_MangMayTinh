@@ -51,7 +51,7 @@ python manage.py runserver 0.0.0.0:8000
 1. Mở Visual Studio
 2. Mở file: Server/TargetServer/TargetServer.slnx
 3. Nhấn F5 hoặc Ctrl+F5 để chạy
-4. Khi Form hiện ra → Bấm nút "Open Server" để bắt đầu lắng nghe
+4. Khi Form hiện ra → Bấm nút "Mở server" để bắt đầu lắng nghe
 ```
 
 ### Bước 3️⃣: Kết nối và Điều khiển
