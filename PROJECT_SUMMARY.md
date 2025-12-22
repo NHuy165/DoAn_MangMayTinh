@@ -14,101 +14,51 @@ Xây dựng một hệ thống **Client-Server** cho phép:
 
 ## 🏗️ Kiến Trúc Hệ Thống
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           MẠNG LAN (Local Area Network)                 │
-│                                                                         │
-│  ┌─────────────────┐           TCP/UDP          ┌──────────────────┐    │
-│  │   WEB BROWSER   │◄──────────────────────────►│  TARGET SERVER   │    │
-│  │  (Any Device)   │                            │   (Windows PC)   │    │
-│  │                 │                            │                  │    │
-│  │  ┌───────────┐  │    HTTP Request/Response   │  ┌────────────┐  │    │
-│  │  │  Web UI   │  │◄────────────────────────►  │  │   C# App   │  │    │
-│  │  │  (HTML/   │  │                            │  │  (WinForms)│  │    │
-│  │  │   CSS/JS) │  │         TCP:5656           │  │            │  │    │
-│  │  └───────────┘  │     (Persistent Socket)    │  │  - Keylog  │  │    │
-│  └────────┬────────┘◄ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ► │  │  - Webcam  │  │    │
-│           │                                     │  │  - Screen  │  │    │
-│           │ HTTP:8000                           │  │  - Shell   │  │    │
-│           ▼                                     │  │  - Files   │  │    │
-│  ┌─────────────────┐         UDP:5657           │  └────────────┘  │    │
-│  │  DJANGO SERVER  │◄ ─ ─ ─ ─(Discovery) ─ ─ ─ ►│                  │    │
-│  │  (Web Client)   │                            └──────────────────┘    │
-│  │                 │                                                    │
-│  │  ┌───────────┐  │                                                    │
-│  │  │  Python   │  │                                                    │
-│  │  │  Backend  │  │                                                    │
-│  │  └───────────┘  │                                                    │
-│  └─────────────────┘                                                    │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+- **Web Browser** (HTML/CSS/JS) - Giao diện người dùng, chỉ hiển thị
+- **Django Server** (Python 4.2) - Xử lý logic, giao tiếp socket với Target → `Client/`
+- **Target Server** (C# .NET 4.7.2) - Máy bị điều khiển, thực thi lệnh → `Server/TargetServer/`
 
-### Các Thành Phần
-
-| Thành phần | Ngôn ngữ | Vai trò | Vị trí |
-|------------|----------|---------|--------|
-| **Target Server** | C# (.NET 4.7.2) | Máy bị điều khiển | `Server/TargetServer/` |
-| **Web Controller** | Python (Django 4.2) | Giao diện điều khiển | `Client/` |
-
----
-
-## 🔌 Giao Thức Truyền Thông
-
-| Giao thức | Port | Mục đích |
-|-----------|------|----------|
-| **UDP Discovery** | 5657 | Tìm kiếm server trong mạng LAN |
-| **TCP Persistent** | 5656 | Truyền lệnh và dữ liệu |
+### 🔌 Giao Thức Truyền Thông
+- **UDP:5657** - Discovery (tìm server trong LAN)
+- **TCP:5656** - Persistent connection (truyền lệnh và dữ liệu)
 
 ---
 
 ## ✨ Tính Năng
 
 ### 🖥️ Quản Lý Hệ Thống
-| Tính năng | Mô tả |
-|-----------|-------|
-| **Applications** | Xem/Dừng các ứng dụng đang chạy |
-| **Processes** | Xem/Kill tất cả tiến trình hệ thống |
-| **Start App** | Khởi động ứng dụng từ Start Menu hoặc đường dẫn |
-| **Power** | Shutdown / Restart máy tính từ xa |
+- **Applications** - Xem/Dừng các ứng dụng đang chạy
+- **Processes** - Xem/Kill tất cả tiến trình hệ thống
+- **Start App** - Khởi động ứng dụng từ Start Menu hoặc đường dẫn
+- **Power** - Shutdown / Restart máy tính từ xa
 
 ### 📷 Giám Sát
-| Tính năng | Mô tả |
-|-----------|-------|
-| **Screenshot** | Chụp ảnh màn hình tức thời |
-| **Screen Recording** | Quay video màn hình, lưu file .avi |
-| **Webcam** | Bật/Ghi hình webcam |
-| **Keylogger** | Ghi lại các phím đã nhấn |
+- **Screenshot** - Chụp ảnh màn hình tức thời
+- **Screen Recording** - Quay video màn hình, lưu file .avi
+- **Webcam** - Bật/Ghi hình webcam
+- **Keylogger** - Ghi lại các phím đã nhấn
 
 ### 🛠️ Quản Lý Nâng Cao
-| Tính năng | Mô tả |
-|-----------|-------|
-| **Remote Shell** | Chạy lệnh CMD trực tiếp |
-| **File Manager** | Duyệt, Download, Xóa file |
-| **System Info** | Xem thông tin CPU, RAM, Disk |
+- **Remote Shell** - Chạy lệnh CMD trực tiếp
+- **File Manager** - Duyệt, Download, Xóa file
+- **System Info** - Xem thông tin CPU, RAM, Disk
 
 ---
 
 ## 🛠️ Công Nghệ Sử Dụng
 
 ### Backend
-| Công nghệ | Mục đích |
-|-----------|----------|
-| **Django 4.2** | Web Framework |
-| **Python 3.10+** | Ngôn ngữ backend |
-| **C# .NET 4.7.2** | Server-side |
+- **Django 4.2** - Web Framework
+- **Python 3.10+** - Ngôn ngữ backend
+- **C# .NET 4.7.2** - Server-side
 
 ### Frontend
-| Công nghệ | Mục đích |
-|-----------|----------|
-| **Tailwind CSS** | Styling |
-| **JavaScript** | Client-side logic |
+- **Tailwind CSS** - Styling
+- **JavaScript** - Client-side logic
 
 ### Libraries (C#)
-| Library | Mục đích |
-|---------|----------|
-| **AForge.Video** | Webcam capture |
-| **System.Drawing** | Screenshot |
+- **AForge.Video** - Webcam capture
+- **System.Drawing** - Screenshot
 
 ---
 
@@ -116,53 +66,67 @@ Xây dựng một hệ thống **Client-Server** cho phép:
 
 ```
 DoAn_MangMayTinh/
-├── Client/                             # Web Controller (Django)
-│   ├── apps/
-│   │   ├── remote_control/             # App chính
-│   │   │   ├── views.py                # API endpoints
-│   │   │   ├── urls.py
-│   │   │   ├── socket_client_persistent.py
-│   │   │   ├── udp_discovery.py
-│   │   │   └── ...
-│   │   └── pages/                      # Dashboard pages
-│   ├── config/
-│   │   ├── settings.py
-│   │   └── urls.py
-│   ├── templates/
-│   │   ├── remote_control/             # Feature templates
-│   │   │   ├── home.html
-│   │   │   ├── applications.html
-│   │   │   ├── processes.html
-│   │   │   ├── screenshot.html
-│   │   │   ├── screen.html
-│   │   │   ├── webcam.html
-│   │   │   ├── keylogger.html
-│   │   │   ├── shell.html
-│   │   │   ├── file_manager.html
-│   │   │   ├── power.html
-│   │   │   └── partials/
-│   │   ├── layouts/
-│   │   └── includes/
-│   ├── static/
-│   ├── media/
-│   ├── manage.py
-│   └── requirements.txt
 │
-├── Server/                             # Target Server (C#)
+├── Client/                                     # 🌐 Web Controller (Django)
+│   │
+│   ├── apps/                                   # Django applications
+│   │   └── remote_control/                     # ⭐ App điều khiển chính
+│   │       ├── views.py                        # API endpoints xử lý request
+│   │       ├── urls.py                         # Định tuyến URL
+│   │       ├── socket_client_persistent.py     # 🔌 Quản lý kết nối TCP với Target
+│   │       └── udp_discovery.py                # 📡 Broadcast tìm server trong LAN
+│   │
+│   ├── config/                                 # ⚙️ Cấu hình Django
+│   │   ├── settings.py                         # Settings chính
+│   │   └── urls.py                             # Root URL configuration
+│   │
+│   ├── templates/                              # 🎨 Giao diện HTML
+│   │   ├── remote_control/                     # Templates cho từng tính năng
+│   │   │   ├── *.html                          # Wrapper templates
+│   │   │   └── partials/                       # ⭐ Code JS/HTML thực tế
+│   │   │       ├── applications_partial.html   # Logic quản lý applications
+│   │   │       ├── processes_partial.html      # Logic quản lý processes
+│   │   │       ├── screenshot_partial.html     # Logic chụp màn hình
+│   │   │       ├── screen_partial.html         # Logic quay màn hình
+│   │   │       ├── webcam_partial.html         # Logic webcam
+│   │   │       ├── keylogger_partial.html      # Logic keylogger
+│   │   │       ├── shell_partial.html          # Logic remote shell
+│   │   │       ├── file_manager_partial.html   # Logic file manager
+│   │   │       ├── power_partial.html          # Logic power control
+│   │   │       └── home_partial.html           # Logic home/system info
+│   │   │
+│   │   ├── layouts/                            # Base templates
+│   │   └── includes/                           # Reusable components (sidebar)
+│   │
+│   ├── static/assets/                          # 📁 CSS, JS tĩnh
+│   │
+│   ├── media/                                  # 📂 Lưu trữ file từ Target
+│   │   ├── screen_recordings/                  # Video quay màn hình (.avi)
+│   │   └── webcam/                             # Video webcam (.avi)
+│   │
+│   ├── manage.py                               # Django CLI
+│   ├── requirements.txt                        # Python dependencies
+│   │
+│   └── ...
+│
+├── Server/                                     # 🖥️ Target Server (C#)
 │   └── TargetServer/
-│       ├── server.cs                   # Main server logic
-│       ├── Program.cs
-│       ├── Keylog.cs
-│       ├── WebcamRecorder.cs
-│       ├── ScreenRecorder.cs
-│       ├── FileManager.cs
-│       ├── TargetServer.csproj
-│       └── TargetServer.slnx
+│       ├── server.cs                           # ⭐ Logic server chính
+│       ├── server.Designer.cs                  # WinForms UI designer
+│       ├── Program.cs                          # Entry point
+│       ├── Keylog.cs                           # 🔑 Module ghi phím
+│       ├── WebcamRecorder.cs                   # 📷 Module quay webcam
+│       ├── ScreenRecorder.cs                   # 🖼️ Module quay màn hình
+│       ├── FileManager.cs                      # 📁 Module quản lý file
+│       ├── TargetServer.csproj                 # Project file
+│       ├── TargetServer.slnx                   # Solution file
+│       └── packages/                           # NuGet packages (AForge, Accord)
 │
-├── AI_Chatlog/                         # Nhật ký phát triển
-│   └── *.md
+├── AI_Chatlog/                                 # 📝 Nhật ký phát triển với AI
 │
-└── *.md                                # Tài liệu
+├── README.md                                   # 📚 Giới thiệu tổng quan
+├── QUICK_START.md                              # 📚 Hướng dẫn chạy nhanh
+└── PROJECT_SUMMARY.md                          # 📚 Chi tiết kiến trúc
 ```
 
 ---

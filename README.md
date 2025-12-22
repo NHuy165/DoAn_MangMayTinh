@@ -60,51 +60,49 @@ python manage.py runserver 0.0.0.0:8000
 
 ```
 DoAn_MangMayTinh/
-├── Client/                         # Web Controller (Django)
-│   ├── apps/
-│   │   └── remote_control/         # App điều khiển chính
-│   │       ├── views.py
-│   │       ├── urls.py
-│   │       ├── socket_client_persistent.py
-│   │       ├── udp_discovery.py
-│   │       └── ...
-│   ├── config/                     # Cấu hình Django
-│   ├── templates/
-│   │   ├── remote_control/         # Giao diện các tính năng
-│   │   ├── layouts/
-│   │   └── includes/
-│   ├── manage.py
-│   └── requirements.txt
 │
-├── Server/                         # Target Server (C#)
-│   └── TargetServer/
-│       ├── server.cs               # Logic server chính
-│       ├── Keylog.cs
-│       ├── WebcamRecorder.cs
-│       ├── ScreenRecorder.cs
-│       ├── FileManager.cs
-│       └── TargetServer.slnx
+├── Client/                             # 🌐 Web Controller (Django)
+│   ├── apps/remote_control/            # ⭐ App điều khiển chính
+│   │   ├── views.py                    # API endpoints
+│   │   ├── socket_client_persistent.py # Kết nối TCP với Target
+│   │   └── udp_discovery.py            # Broadcast tìm server
+│   ├── config/                         # Cấu hình Django
+│   ├── templates/remote_control/       # 🎨 Giao diện HTML
+│   │   ├── *.html                      # Wrapper templates
+│   │   └── partials/*_partial.html     # Code JS/HTML cho từng tính năng
+│   ├── media/                          # 📂 Lưu recordings từ Target
+│   ├── requirements.txt
+│   │
+│   └── ...
 │
-├── AI_Chatlog/                     # Nhật ký phát triển
-└── *.md                            # Tài liệu
+├── Server/TargetServer/                # 🖥️ Target Server (C#)
+│   ├── server.cs                       # Logic server chính
+│   ├── Keylog.cs, WebcamRecorder.cs    # Các module chức năng
+│   ├── ScreenRecorder.cs, FileManager.cs
+│   └── TargetServer.slnx               # Solution file
+│
+├── AI_Chatlog/                         # 📝 Nhật ký phát triển
+└── *.md                                # 📚 Tài liệu
 ```
 
 ---
 
-## 📝 Nhật Ký Phát Triển
+## 📝 Nhật Ký Phát Triển (AI Chatlog)
 
-| # | Giai đoạn | Nội dung | AI |
+Dự án được phát triển với sự hỗ trợ của các công cụ AI. Dưới đây là chi tiết từng giai đoạn:
+
+| # | Giai đoạn | Nội dung | Assistant |
 |---|-----------|----------|-----|
-| 1 | Xây dựng nền tảng | Khởi tạo project, chức năng cơ bản | Gemini |
-| 2 | Webcam | Bật/tắt và ghi hình webcam | Gemini |
-| 3 | Nâng cấp UI | Django, persistent socket, UDP discovery | GitHub Copilot |
-| 4 | Sửa lỗi webcam | Stream và recording | Gemini |
-| 5 | Remote Shell | CMD từ xa qua web | Gemini |
-| 6 | Screen Recording | Quay màn hình | Gemini |
-| 7 | Sửa lỗi | Screen recording và webcam | Gemini |
-| 8 | File Manager | Duyệt, download, xóa file | Gemini |
-| 9 | Home tab | System info dashboard | Gemini |
-| 10 | App scanner | Start Menu scan, tối ưu code | GitHub Copilot |
+| 1 | **Xây dựng nền tảng** | Khởi tạo cấu trúc thư mục và tạo các chức năng cơ bản của dự án từ source code mẫu. Code server chạy bằng C#, code client chạy bằng Python (Flask). | Gemini |
+| 2 | **Webcam** | Thêm tính năng webcam cho ứng dụng web, bao gồm bật/tắt và ghi hình. | Gemini |
+| 3 | **Nâng cấp UI và luồng chạy** | Xây dựng lại web client bằng Django, xây dựng persistent socket bằng TCP. Thêm tính năng discover server trong client web bằng UDP. | GitHub Copilot |
+| 4 | **Sửa lỗi webcam** | Sửa các lỗi trong phần webcam liên quan đến stream và recording. | Gemini |
+| 5 | **Remote shell CMD** | Thêm tính năng Remote Shell CMD, cho phép người dùng chạy CMD Prompt của máy server bằng giao diện web. | Gemini |
+| 6 | **Screen recording** | Thêm tính năng screen recording, cho phép quay màn hình máy tính của server. | Gemini |
+| 7 | **Sửa lỗi screen recording và webcam** | Sửa các lỗi liên quan đến các tương tác với các nút giao diện khi sử dụng screen recording và webcam. | Gemini |
+| 8 | **File manager** | Thêm tính năng file manager, cho phép người dùng truy cập, download và delete file bên máy chủ server. | Gemini |
+| 9 | **Home tab + sửa lỗi** | Thêm tính năng home page hiển thị các thông tin của máy bị điều khiển (CPU, RAM, Disk, v.v.). Sửa một số lỗi còn lại. | Gemini |
+| 10 | **App scanner + Tổng duyệt code** | Thêm tính năng quét Start Menu folder cho Applications và Processes Manager. Đồng thời tổng duyệt và tối ưu code. | GitHub Copilot |
 
 ---
 
@@ -112,8 +110,6 @@ DoAn_MangMayTinh/
 
 - [QUICK_START.md](QUICK_START.md) - Hướng dẫn chạy nhanh
 - [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) - Tổng quan kiến trúc
-- [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) - Migration Flask → Django
-- [TESTING_CHECKLIST.md](TESTING_CHECKLIST.md) - Checklist test
 
 ---
 
